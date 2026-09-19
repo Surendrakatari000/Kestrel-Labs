@@ -1,0 +1,23 @@
+# Environment variables & secrets (NEVER commit)
+.env
+*.env
+
+# Python virtual environment
+venv/
+env/
+ENV/
+
+# Python byte-code & caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# ChromaDB vector store (auto-generated from corpus.jsonl)
+chroma_db/
+
+# IDE & OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

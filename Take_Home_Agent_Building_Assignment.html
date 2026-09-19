@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Take-Home Assignment 3: Multi-Agent Research Assistant</title>
+    <style>
+      :root { --ink:#17283d; --muted:#56697f; --blue:#0b5fa5; --pale:#eef6ff; --line:#cbd9e6; --green:#e9f7ee; --amber:#fff7e6; --amber-line:#f0d9a6; }
+      * { box-sizing:border-box; }
+      body { margin:0; background:#f4f7fa; color:var(--ink); font:15px/1.55 Arial,Helvetica,sans-serif; }
+      main { width:min(880px,calc(100% - 32px)); margin:28px auto; padding:40px 48px; background:#fff; border:1px solid var(--line); box-shadow:0 4px 18px rgb(22 38 59 / 8%); }
+      header { padding-bottom:20px; border-bottom:3px solid var(--blue); }
+      h1 { margin:0 0 10px; font-size:30px; line-height:1.15; }
+      h2 { margin:34px 0 10px; font-size:20px; padding-top:18px; border-top:1px solid var(--line); }
+      h3 { margin:20px 0 6px; font-size:16px; }
+      p { margin:8px 0; }
+      .eyebrow { margin:0 0 6px; color:var(--blue); font-weight:700; font-size:12px; letter-spacing:.06em; text-transform:uppercase; }
+      .meta { display:flex; flex-wrap:wrap; gap:8px 28px; margin-top:14px; color:var(--muted); font-size:14px; } .meta strong { color:var(--ink); }
+      .callout { margin:16px 0; padding:12px 16px; background:var(--pale); border-left:4px solid var(--blue); }
+      .warn { background:var(--amber); border-left-color:#d9a441; }
+      .ok { background:var(--green); border-left-color:#5aa76f; }
+      ul, ol { margin:8px 0; padding-left:22px; } li { margin:5px 0; }
+      table { width:100%; margin:10px 0; border-collapse:collapse; font-size:14px; }
+      th, td { border:1px solid var(--line); padding:8px 10px; text-align:left; vertical-align:top; }
+      th { background:var(--ink); color:#fff; } tr:nth-child(even) td { background:#f8fbfd; }
+      code { padding:1px 4px; background:#edf1f5; border-radius:3px; font-family:"Courier New",monospace; font-size:.92em; }
+      pre { margin:10px 0; padding:12px 14px; background:#edf1f5; border-radius:4px; font:12.5px/1.5 "Courier New",monospace; white-space:pre-wrap; word-break:break-word; }
+      .check li { list-style:none; margin-left:-22px; padding-left:26px; position:relative; }
+      .check li::before { content:"\2610"; position:absolute; left:0; top:0; color:var(--blue); }
+      @media (max-width:720px) { main { width:100%; margin:0; padding:24px 20px; border:0; } }
+      @media print { body { background:#fff; font-size:12px; } main { width:100%; margin:0; padding:0; border:0; box-shadow:none; } h2 { page-break-after:avoid; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <p class="eyebrow">Take-home assignment 3</p>
+        <h1>Build a multi-agent research assistant</h1>
+        <p>In this assignment the candidate is required to build a small team of agents that answers questions about a company's internal documentation: retrieving evidence, checking claims, citing sources, and showing its work. The candidate is expected to assemble these components end to end and measure how well the resulting system performs.</p>
+        <div class="meta">
+          <span><strong>Submit:</strong> Git repository link + LangSmith access</span>
+          <span style="margin-left:auto"><strong>Deadline:</strong> September 20, 2026 at 11 PM</span>
+        </div>
+      </header>
+
+      <h2>1. The scenario</h2>
+      <p>Kestrel Labs is a fictional company that sells Kestrel, a product-analytics and event-pipeline SaaS. Like most companies, its internal wiki has grown over time: product specs, release notes, pricing pages, engineering runbooks, incident post-mortems, HR and security policies, and customer onboarding guides. Some pages are current; some have not been touched in a while.</p>
+      <p>The task is to build a research assistant that a new Kestrel employee could use to ask questions about the company and receive answers they can trust. "Trust" means every answer is backed by the documents, points to exactly where the evidence came from, and is honest when the documents do not settle the question.</p>
+      <div class="callout"><strong>Why a fictional company?</strong> Kestrel Labs does not exist, so no language model knows anything about it. A right answer can only come from retrieving the right document. That makes it possible to distinguish a system that retrieves well from one that merely guesses well.</div>
+
+      <h2>2. What is provided</h2>
+      <p><code>corpus.jsonl</code> ships alongside this document. It contains <strong>154 chunks from 25 documents</strong>. Every candidate who receives this assignment gets the same file.</p>
+      <table>
+        <thead><tr><th>Category</th><th>Docs</th><th>What is in it</th></tr></thead>
+        <tbody>
+          <tr><td><code>product</code></td><td>6</td><td>Feature specifications: ingest API, funnels and cohorts, Trails, Beacons, Warehouse Sync, SDKs and the query language. Limits, defaults, which plans include what.</td></tr>
+          <tr><td><code>release-notes</code></td><td>5</td><td>Versions 3.4 through 4.1. Patch releases reference incidents and state the previous value of anything that changed.</td></tr>
+          <tr><td><code>pricing</code></td><td>2</td><td>Plans, limits, overage, add-ons, trial and SLA terms.</td></tr>
+          <tr><td><code>engineering</code></td><td>4</td><td>Ingest pipeline and query engine architecture, deployment runbook, on-call runbook.</td></tr>
+          <tr><td><code>incident</code></td><td>3</td><td>Post-mortems with timelines, root causes and the release that fixed each issue.</td></tr>
+          <tr><td><code>policy</code></td><td>3</td><td>Data retention, security and compliance, employee handbook.</td></tr>
+          <tr><td><code>onboarding</code></td><td>2</td><td>Customer onboarding guide and product FAQ.</td></tr>
+        </tbody>
+      </table>
+      <p>Each line is one chunk. Chunks of a document are numbered in order, so <code>spec-beacons:0</code> is the start of the Beacons spec and <code>spec-beacons:1</code> follows it.</p>
+      <pre>{"chunk_id": "spec-beacons:0", "doc_id": "spec-beacons", "title": "Beacons: Alerting Specification", "category": "product", "owner": "Product Engineering", "source_url": "kb://kestrel/product/beacons", "published": "20260203", "version": "4.1", "text": "## Overview A Beacon is an alert rule attached to a metric. When the rule's condition is met, Kestrel sends a notification to one or more destinations. ..."}</pre>
+      <h3>Reading the corpus before designing the system</h3>
+      <p>Candidates should spend twenty minutes reading the corpus before designing anything. A few observations should shape the design:</p>
+      <ul>
+        <li>Documents were written at different times and are not all kept in sync. When two documents disagree, the <code>published</code> date is usually the clue to which one is current.</li>
+        <li>Plenty of reasonable questions are simply not answered anywhere in the corpus. The assistant should say so rather than improvise.</li>
+        <li>Many good answers need more than one document: an incident post-mortem names the fix, a release note dates it, and a pricing page says which customers get it.</li>
+      </ul>
+      <p>A scoring key covering all of these cases is held by the reviewers. It will not be shared with candidates, but the assistant should be built on the assumption that it will be asked questions of each kind.</p>
+
+      <h2>3. What to build</h2>
+      <h3>3.1 A multi-agent system</h3>
+      <ul>
+        <li>Use <strong>at least three agents</strong> with distinct responsibilities. A planner or router, a retriever, a critic or verifier, and a synthesiser is a sensible starting point; any three or more well-justified roles are acceptable.</li>
+        <li>Give the agents an explicit way to pass work between them, either a hand-off protocol or shared state, so that later agents can see earlier decisions and the evidence that was retrieved.</li>
+        <li>Support multi-turn conversations. A follow-up such as "how many of them can I create?" must resolve against the previous turn.</li>
+        <li>Give at least one agent a tool: search over the corpus, citation lookup, query decomposition, or another well-justified capability.</li>
+        <li>Use a lightweight local vector store such as Chroma, FAISS or LanceDB.</li>
+        <li>Orchestration may use LangGraph, CrewAI, AutoGen, LlamaIndex, plain LangChain, or a custom loop. The design document should state which was chosen and why.</li>
+      </ul>
+      <h3>3.2 Grounded, cited answers</h3>
+      <ul>
+        <li>Retrieve before answering any question about Kestrel. Every final answer cites the <code>chunk_id</code> and <code>title</code> of the evidence it rests on.</li>
+        <li>The critic or verifier checks each material claim against the retrieved context and records a verdict: <code>supported</code>, <code>partially_supported</code>, <code>conflicting_evidence</code>, or <code>insufficient_evidence</code>.</li>
+        <li>When evidence is missing, the system should say so plainly. When sources disagree, it should present both, state which is more reliable, and explain why.</li>
+      </ul>
+      <h3>3.3 An evaluation suite</h3>
+      <ul>
+        <li>Write at least <strong>15 original questions</strong> against the corpus. Include single-hop, multi-hop, conflicting-evidence, unsupported, and follow-up questions, and record the expected answer and the chunks that support it.</li>
+        <li>Measure retrieval quality, answer faithfulness, answer relevance, and end-to-end correctness. Add at least one further defensible metric: an LLM-as-judge score, citation precision, or another suitable measure.</li>
+        <li>Act on the evaluation results. Submissions must show one concrete change made to the system because the numbers or the traces indicated it was needed, with before-and-after results.</li>
+      </ul>
+      <h3>3.4 LangSmith observability</h3>
+      <ul>
+        <li>Trace the whole workflow in LangSmith so a reviewer can follow a question from router to final answer, including every retrieval and every agent's input and output.</li>
+        <li>Run the evaluation suite as a LangSmith dataset and log the results there. Attach feedback or custom metrics to runs.</li>
+        <li>Trace at least three representative runs, including one unsupported and one multi-hop question.</li>
+      </ul>
+      <div class="callout"><strong>LangSmith sharing:</strong> Access to the LangSmith project should be granted to <code>radialpulse@nxtwave.co.in</code> so reviewers can inspect traces, dataset runs, and metrics.</div>
+      <h3>3.5 A simple frontend</h3>
+      <p>A minimal web UI (Streamlit, Gradio, a small React page, or similar) should support multi-turn questions and visibly show the answer, its citations, and the status of each agent as the run progresses. Visual polish is not required; the priority is making the system's behaviour visible.</p>
+
+      <h2>4. Ground rules</h2>
+      <ul>
+        <li><strong>Generation:</strong> use a free-tier provider, preferably Groq or Gemini. Other free tiers are acceptable if documented.</li>
+        <li><strong>Embeddings:</strong> use a <strong>local embedding model</strong> (a sentence-transformers model, for example). Hosted embedding APIs are not permitted. The model should be named in the README.</li>
+        <li><strong>Respecting the free tier:</strong> keep embedding and generation calls sequential, cap output lengths, and handle HTTP 429 with bounded retry and backoff.</li>
+        <li><strong>The corpus is read-only.</strong> Commit <code>corpus.jsonl</code> unchanged at the root of the repository; its hash will be checked. Evaluation questions should be kept in a separate file.</li>
+        <li><strong>One command.</strong> After setting environment variables, the whole system should run end to end with a single command or notebook.</li>
+        <li><strong>No secrets in Git.</strong> Keys such as <code>GROQ_API_KEY</code>, <code>GEMINI_API_KEY</code> and <code>LANGSMITH_API_KEY</code> should be read from the environment, with a <code>.env.example</code> provided.</li>
+      </ul>
+
+      <h2>5. What to submit</h2>
+      <p>A link to a Git repository containing:</p>
+      <ul class="check">
+        <li>The working pipeline, a README with setup and run instructions, and <code>.env.example</code>.</li>
+        <li><code>corpus.jsonl</code>, unchanged, at the repository root.</li>
+        <li>A short design document with a one-page architecture diagram: the agents used, how they hand off, the orchestration choice, and why.</li>
+        <li>The evaluation script or notebook.</li>
+        <li>A <code>results/</code> directory in the format below.</li>
+        <li>A brief reflection: trade-offs, cost and latency observations, what worked, and what would be done next.</li>
+        <li>Access to the LangSmith project (a shareable link or an invitation for the reviewer), showing traces and the dataset evaluation run.</li>
+      </ul>
+      <h3>The <code>results/</code> directory</h3>
+      <p>Submissions are compared programmatically, so these file names and field names must be kept exactly as specified.</p>
+      <table>
+        <thead><tr><th>File</th><th>Contents</th></tr></thead>
+        <tbody>
+          <tr><td><code>results/eval_questions.jsonl</code></td><td>The evaluation suite, one question per line: <code>question_id</code>, <code>question</code>, <code>type</code> (<code>single_hop</code>, <code>multi_hop</code>, <code>conflicting</code>, <code>unsupported</code>, or <code>follow_up</code>), <code>conversation_id</code> and <code>turn</code> for follow-ups, <code>expected_answer</code> (<code>null</code> for unsupported), and <code>expected_chunk_ids</code> using <code>chunk_id</code> values from <code>corpus.jsonl</code>.</td></tr>
+          <tr><td><code>results/eval_results.jsonl</code></td><td>One line per question: <code>question_id</code>, <code>answer</code>, <code>citations</code> (the <code>chunk_id</code>s cited in the answer), <code>retrieved_chunk_ids</code> (the retriever's ranked list), <code>verifier_verdict</code>, <code>scores</code> (an object keyed by metric name), <code>latency_seconds</code>, and <code>langsmith_run_url</code>.</td></tr>
+          <tr><td><code>results/metrics_summary.json</code></td><td>Aggregate score per metric, a breakdown by question <code>type</code>, total token usage, total wall-clock time, and the generation and embedding models used.</td></tr>
+          <tr><td><code>results/improvement.md</code></td><td>The one improvement made because of evaluation or observability: what was observed, what was changed, and the metric values before and after.</td></tr>
+        </tbody>
+      </table>
+
+      <h2>6. Evaluation criteria</h2>
+      <table>
+        <thead><tr><th>Area</th><th>What is assessed</th><th>Weight</th></tr></thead>
+        <tbody>
+          <tr><td>Multi-agent collaboration</td><td>Roles that earn their place, a clear orchestration story, hand-offs that carry the right context, tools used for a reason.</td><td>25%</td></tr>
+          <tr><td>RAG effectiveness</td><td>The right chunks come back, answers stick to them, citations are accurate, and the system is honest when evidence is missing or contradictory.</td><td>25%</td></tr>
+          <tr><td>Evaluation rigour</td><td>A test set that probes the hard cases, defensible metrics, and proof that the numbers changed what was built.</td><td>20%</td></tr>
+          <tr><td>LangSmith observability</td><td>Traces deep enough to debug from, a dataset run, feedback or custom metrics, and clear latency and cost observations.</td><td>15%</td></tr>
+          <tr><td>Code and reproducibility</td><td>Readable code, concise documentation, a single-command run, no secrets committed.</td><td>15%</td></tr>
+        </tbody>
+      </table>
+      <p>Each system will also be run against a held-out set of questions using the files in <code>results/</code> and the submitted repository. Correct answers that are not backed by the cited chunks do not count as correct.</p>    </main>
+  </body>
+</html>

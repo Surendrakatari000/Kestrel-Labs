@@ -1,0 +1,33 @@
+{
+  "total_questions": 15,
+  "errors": 0,
+  "avg_citation_recall": 0.522,
+  "avg_latency_seconds": 27.19,
+  "by_type": {
+    "single_hop": {
+      "count": 4,
+      "avg_citation_recall": 0.75,
+      "avg_latency_seconds": 15.52
+    },
+    "multi_hop": {
+      "count": 4,
+      "avg_citation_recall": 0.375,
+      "avg_latency_seconds": 30.33
+    },
+    "conflicting": {
+      "count": 3,
+      "avg_citation_recall": 0.111,
+      "avg_latency_seconds": 49.76
+    },
+    "unsupported": {
+      "count": 2,
+      "avg_citation_recall": 1.0,
+      "avg_latency_seconds": 20.31
+    },
+    "follow_up": {
+      "count": 2,
+      "avg_citation_recall": 0.5,
+      "avg_latency_seconds": 17.3
+    }
+  }
+}
