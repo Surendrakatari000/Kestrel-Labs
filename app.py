@@ -2,7 +2,6 @@
 
 import os
 import streamlit as st
-import streamlit.components.v1 as components
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage, AIMessage
 
@@ -18,17 +17,44 @@ st.set_page_config(
 # Load environment
 load_dotenv()
 
+import time
 from src.graph import build_graph
-from src.vectorstore import get_collection, EMBEDDING_MODEL_NAME
+from src.vectorstore import get_collection, get_embedding_function, EMBEDDING_MODEL_NAME
 
-
-@st.cache_resource(show_spinner="Initializing Kestrel knowledge base & local embeddings...")
-def _warmup_resources():
-    """Pre-load local embeddings & vector store into memory on startup."""
-    col = get_collection()
-    return col.count()
-
-chunk_count = _warmup_resources()
+# ─────────────────────────────────────────────
+# 2. Knowledge Base & Model Warmup with Progress Bar
+# ─────────────────────────────────────────────
+if "chunk_count" not in st.session_state:
+    loading_placeholder = st.empty()
+    with loading_placeholder.container():
+        prog_bar = st.progress(0, text="Initializing Kestrel knowledge base & local embeddings... 0%")
+        
+        # Step 1: Connect to local ChromaDB
+        prog_bar.progress(20, text="Initializing Kestrel knowledge base & local embeddings... 20%")
+        col = get_collection()
+        chunk_count = col.count()
+        
+        # Step 2: Load local embeddings model
+        prog_bar.progress(50, text="Initializing Kestrel knowledge base & local embeddings... 50%")
+        _ = get_embedding_function()
+        
+        # Step 3: Warm up vector search index
+        prog_bar.progress(75, text="Initializing Kestrel knowledge base & local embeddings... 75%")
+        _ = col.query(query_texts=["warmup"], n_results=1)
+        
+        # Step 4: Pre-compile multi-agent graph
+        prog_bar.progress(90, text="Initializing Kestrel knowledge base & local embeddings... 90%")
+        if "graph" not in st.session_state:
+            st.session_state.graph = build_graph()
+            
+        # Step 5: Completed
+        prog_bar.progress(100, text="Initializing Kestrel knowledge base & local embeddings... 100%")
+        time.sleep(0.3)
+    
+    loading_placeholder.empty()
+    st.session_state.chunk_count = chunk_count
+else:
+    chunk_count = st.session_state.chunk_count
 
 
 # ─────────────────────────────────────────────
@@ -102,7 +128,7 @@ with chat_container:
 chat_input = st.chat_input("Ask about Kestrel (e.g. Is Trails available on the Starter plan?)")
 
 # Auto-focus chat input bar
-components.html(
+st.html(
     """
     <script>
     function focusInput() {
@@ -117,9 +143,7 @@ components.html(
     setTimeout(focusInput, 150);
     setTimeout(focusInput, 500);
     </script>
-    """,
-    height=0,
-    width=0,
+    """
 )
 
 user_input = prompt_to_submit or chat_input
