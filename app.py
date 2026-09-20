@@ -56,9 +56,10 @@ if "messages" not in st.session_state:
 # 4. Welcome & Starter Suggestions (when empty)
 # ─────────────────────────────────────────────
 prompt_to_submit = None
+welcome_placeholder = st.empty()
 
 if not st.session_state.messages:
-    with st.container():
+    with welcome_placeholder.container():
         st.markdown("""
         ### 👋 Welcome! How can I help you today?
         I can retrieve verified evidence from company docs, resolve conflicting policies using publication dates, and cross-reference multiple specs.
@@ -79,7 +80,7 @@ if not st.session_state.messages:
             if st.button("🛡️ How long are raw events kept in cold storage?", use_container_width=True):
                 prompt_to_submit = "How long are raw events kept in cold storage after the plan retention window ends?"
 
-    st.divider()
+        st.divider()
 
 
 # ─────────────────────────────────────────────
@@ -99,6 +100,9 @@ chat_input = st.chat_input("Ask about Kestrel (e.g. Is Trails available on the S
 user_input = prompt_to_submit or chat_input
 
 if user_input:
+    # Immediately clear the welcome banner and sample questions from the screen
+    welcome_placeholder.empty()
+
     # Add user message
     st.session_state.messages.append(HumanMessage(content=user_input))
     with st.chat_message("user"):
