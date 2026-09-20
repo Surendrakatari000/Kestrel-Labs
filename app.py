@@ -193,21 +193,43 @@ if st.session_state.messages and isinstance(st.session_state.messages[-1], Human
 # ─────────────────────────────────────────────
 chat_input = st.chat_input("Ask about Kestrel (e.g. Is Trails available on the Starter plan?)")
 
-# Auto-focus chat input bar
+# Client-side DOM synchronization: auto-focus & instant removal of stale suggestion buttons
 st.html(
     """
     <script>
-    function focusInput() {
+    function cleanupAndFocus() {
         try {
             const doc = window.parent ? window.parent.document : document;
+
+            // Auto-focus chat input
             const textarea = doc.querySelector('textarea[data-testid="stChatInputTextArea"]');
             if (textarea) {
                 textarea.focus();
             }
+
+            // If any chat messages are present, immediately purge any lingering suggestion buttons
+            const chatMessages = doc.querySelectorAll('[data-testid="stChatMessage"]');
+            if (chatMessages.length > 0) {
+                doc.querySelectorAll('button').forEach(btn => {
+                    const label = (btn.innerText || '').trim();
+                    if (label && !label.includes('Clear Conversation')) {
+                        const container = btn.closest('.stButton') || btn.closest('[data-testid="stHorizontalBlock"]') || btn;
+                        container.style.display = 'none';
+                    }
+                });
+                doc.querySelectorAll('p, h3, h4, div').forEach(el => {
+                    const text = (el.innerText || '').trim();
+                    if (text === 'Try asking one of these common questions:' || text.includes('Welcome! How can I help you today?')) {
+                        el.style.display = 'none';
+                    }
+                });
+            }
         } catch (e) {}
     }
-    setTimeout(focusInput, 150);
-    setTimeout(focusInput, 500);
+    cleanupAndFocus();
+    setTimeout(cleanupAndFocus, 50);
+    setTimeout(cleanupAndFocus, 150);
+    setTimeout(cleanupAndFocus, 400);
     </script>
     """
 )
