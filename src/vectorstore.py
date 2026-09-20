@@ -16,20 +16,35 @@ CHROMA_DB_DIR = BASE_DIR / "chroma_db"
 COLLECTION_NAME = "kestrel_corpus"
 
 
+_cached_ef = None
+_cached_client = None
+_cached_collection = None
+
+
 def get_embedding_function():
-    """Returns the local SentenceTransformer embedding function."""
-    return embedding_functions.SentenceTransformerEmbeddingFunction(
-        model_name=EMBEDDING_MODEL_NAME
-    )
+    """Returns the cached local SentenceTransformer embedding function."""
+    global _cached_ef
+    if _cached_ef is None:
+        _cached_ef = embedding_functions.SentenceTransformerEmbeddingFunction(
+            model_name=EMBEDDING_MODEL_NAME
+        )
+    return _cached_ef
 
 
 def get_chroma_client():
-    """Returns a persistent ChromaDB client."""
-    return chromadb.PersistentClient(path=str(CHROMA_DB_DIR))
+    """Returns the cached persistent ChromaDB client."""
+    global _cached_client
+    if _cached_client is None:
+        _cached_client = chromadb.PersistentClient(path=str(CHROMA_DB_DIR))
+    return _cached_client
 
 
 def get_collection():
-    """Returns the Chroma collection, ingesting corpus if empty."""
+    """Returns the cached Chroma collection, ingesting corpus if empty."""
+    global _cached_collection
+    if _cached_collection is not None:
+        return _cached_collection
+
     client = get_chroma_client()
     ef = get_embedding_function()
 
@@ -43,7 +58,8 @@ def get_collection():
         _ingest(collection)
         print(f"[vectorstore] Done. {collection.count()} chunks indexed.")
 
-    return collection
+    _cached_collection = collection
+    return _cached_collection
 
 
 def _ingest(collection):

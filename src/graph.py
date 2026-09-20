@@ -32,6 +32,13 @@ def after_verifier(state: AgentState) -> str:
     if state.get("overall_supported", True):
         return "accept"
 
+    # For conflicting or unsupported queries, the synthesizer and verifier
+    # already compare dates and present the resolution/gap. Retrying ChromaDB
+    # returns the exact same chunks and wastes 20-30s.
+    query_type = state.get("query_type", "")
+    if query_type in ("conflicting", "unsupported"):
+        return "accept"
+
     retry_count = state.get("retry_count", 0)
     if retry_count < 1:
         return "retry"

@@ -6,9 +6,19 @@ from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage, AIMessage
 
 from src.graph import build_graph
+from src.vectorstore import get_collection
 
 # Load .env (GROQ_API_KEY, LANGCHAIN_*)
 load_dotenv()
+
+
+@st.cache_resource
+def _warmup_resources():
+    """Pre-load local embeddings & vector store into memory on startup."""
+    col = get_collection()
+    return col.count()
+
+_warmup_resources()
 
 # ─────────────────────────────────────────────
 # Page config
