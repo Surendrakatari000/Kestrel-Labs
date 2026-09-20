@@ -122,25 +122,22 @@ if user_input:
             for step_output in st.session_state.graph.stream(state_input):
                 for node_name, node_state in step_output.items():
                     if node_name == "router":
-                        status_area.markdown("⏳ `Routed` ➔ `Retrieving...`")
+                        status_area.markdown("⏳ `Retrieving...`")
 
                     elif node_name == "retriever":
-                        n_chunks = len(node_state.get("retrieved_chunks", []))
-                        status_area.markdown(f"⏳ `Routed` ➔ `Retrieved ({n_chunks} chunks)` ➔ `Generating...`")
+                        status_area.markdown("⏳ `Generating...`")
 
                     elif node_name == "synthesizer":
-                        status_area.markdown("⏳ `Routed` ➔ `Retrieved` ➔ `Generated` ➔ `Checking...`")
+                        status_area.markdown("⏳ `Checking...`")
 
                     elif node_name == "verifier":
-                        status_area.markdown("✅ `Routed` ➔ `Retrieved` ➔ `Generated` ➔ `Checked`")
                         final_answer = node_state.get("final_answer", "")
 
                     elif node_name == "increment_retry":
-                        status_area.markdown("🔄 `Routed` ➔ `Re-retrieving` ➔ `Re-generating...`")
+                        status_area.markdown("⏳ `Re-retrieving...`")
 
                     elif node_name == "unsupported":
                         final_answer = node_state.get("final_answer", "")
-                        status_area.markdown("⚠️ `Routed` ➔ `Unsupported topic`")
 
             # Clear status and show answer
             status_area.empty()
