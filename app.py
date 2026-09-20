@@ -82,11 +82,9 @@ if "messages" not in st.session_state:
 # ─────────────────────────────────────────────
 # 4. Welcome & Starter Suggestions (when empty)
 # ─────────────────────────────────────────────
-prompt_to_submit = None
-welcome_placeholder = st.empty()
-
 if not st.session_state.messages:
-    with welcome_placeholder.container():
+    welcome_container = st.container()
+    with welcome_container:
         st.markdown("""
         ### 👋 Welcome! How can I help you today?
         Ask any question about Kestrel Labs products, pricing plans, engineering runbooks, or company policies.
@@ -98,68 +96,37 @@ if not st.session_state.messages:
         col1, col2 = st.columns(2)
         with col1:
             if st.button("🔔 How do Beacons work and how often are they evaluated?", use_container_width=True):
-                prompt_to_submit = "How do Beacons work and how often are they evaluated?"
+                st.session_state.messages.append(HumanMessage(content="How do Beacons work and how often are they evaluated?"))
+                st.rerun()
             if st.button("⚡ What caused incident INC-2025-11 and how was it fixed?", use_container_width=True):
-                prompt_to_submit = "What caused the Warehouse Sync duplicate rows incident (INC-2025-11) and how was deduplication fixed?"
+                st.session_state.messages.append(HumanMessage(content="What caused the Warehouse Sync duplicate rows incident (INC-2025-11) and how was deduplication fixed?"))
+                st.rerun()
 
         with col2:
             if st.button("💰 What is the overage fee and allowance on Growth?", use_container_width=True):
-                prompt_to_submit = "How much does overage cost on the Growth plan, and what is the monthly event allowance?"
+                st.session_state.messages.append(HumanMessage(content="How much does overage cost on the Growth plan, and what is the monthly event allowance?"))
+                st.rerun()
             if st.button("🛡️ How long are raw events kept in cold storage?", use_container_width=True):
-                prompt_to_submit = "How long are raw events kept in cold storage after the plan retention window ends?"
+                st.session_state.messages.append(HumanMessage(content="How long are raw events kept in cold storage after the plan retention window ends?"))
+                st.rerun()
 
         st.divider()
 
 
 # ─────────────────────────────────────────────
-# 5. Render Conversation History
+# 5. Render Conversation & Active Turn
 # ─────────────────────────────────────────────
 chat_container = st.container()
 
 with chat_container:
+    is_generating = bool(st.session_state.messages and isinstance(st.session_state.messages[-1], HumanMessage))
+
     for msg in st.session_state.messages:
         role = "user" if isinstance(msg, HumanMessage) else "assistant"
         with st.chat_message(role):
             st.markdown(msg.content)
 
-
-# ─────────────────────────────────────────────
-# 6. Chat Input & Processing
-# ─────────────────────────────────────────────
-chat_input = st.chat_input("Ask about Kestrel (e.g. Is Trails available on the Starter plan?)")
-
-# Auto-focus chat input bar
-st.html(
-    """
-    <script>
-    function focusInput() {
-        try {
-            const doc = window.parent ? window.parent.document : document;
-            const textarea = doc.querySelector('textarea[data-testid="stChatInputTextArea"]');
-            if (textarea) {
-                textarea.focus();
-            }
-        } catch (e) {}
-    }
-    setTimeout(focusInput, 150);
-    setTimeout(focusInput, 500);
-    </script>
-    """
-)
-
-user_input = prompt_to_submit or chat_input
-
-if user_input:
-    # Immediately clear the welcome banner and sample questions from the screen
-    welcome_placeholder.empty()
-
-    # Add user message
-    st.session_state.messages.append(HumanMessage(content=user_input))
-
-    with chat_container:
-        with st.chat_message("user"):
-            st.markdown(user_input)
-
+    if is_generating:
         with st.chat_message("assistant"):
             status_area = st.empty()
             status_area.markdown("🧠 *Understanding question...*")
@@ -204,3 +171,32 @@ if user_input:
                 st.info("Check your `.env` file: is `GROQ_API_KEY` configured?")
                 st.session_state.messages.append(AIMessage(content=err_msg))
                 st.rerun()
+
+
+# ─────────────────────────────────────────────
+# 6. Chat Input & Processing
+# ─────────────────────────────────────────────
+chat_input = st.chat_input("Ask about Kestrel (e.g. Is Trails available on the Starter plan?)")
+
+# Auto-focus chat input bar
+st.html(
+    """
+    <script>
+    function focusInput() {
+        try {
+            const doc = window.parent ? window.parent.document : document;
+            const textarea = doc.querySelector('textarea[data-testid="stChatInputTextArea"]');
+            if (textarea) {
+                textarea.focus();
+            }
+        } catch (e) {}
+    }
+    setTimeout(focusInput, 150);
+    setTimeout(focusInput, 500);
+    </script>
+    """
+)
+
+if chat_input:
+    st.session_state.messages.append(HumanMessage(content=chat_input))
+    st.rerun()
