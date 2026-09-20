@@ -1,33 +1,4 @@
-"""
-LangGraph Multi-Agent Orchestration Workflow
-============================================
-This module constructs and compiles the stateful graph connecting all four agents.
-
-Architecture Flow:
-  START ──► Router
-              │
-              ├─► [needs_retrieval == False] ──► Unsupported Node (Fast-path ~1.5s) ──► END
-              │
-              └─► [needs_retrieval == True] ──► Retriever ──► Synthesizer ──► Verifier
-                                                                                │
-                                                                                ├─► [All claims supported] ──► END
-                                                                                │
-                                                                                └─► [Unsupported claims & retry < 1]
-                                                                                          │ (Loop back)
-                                                                                          ▼
-                                                                                   increment_retry ──► Retriever
-
-Key Interview Talking Points:
-1. State Machine vs Linear Chain:
-   - LangGraph treats the RAG pipeline as a directed cyclic graph with state.
-   - Allows dynamic branching (bypassing retrieval for greetings) and cyclic self-correction (retrying retrieval).
-2. Bounded Cyclic Self-Correction:
-   - If the Verifier discovers that a draft claim lacks support, it triggers a retry loop back to the Retriever.
-   - Retries are strictly capped at 1 (`retry_count < 1`) to prevent infinite looping and excessive token burn.
-3. Latency Optimization:
-   - Conversational greetings or thanks take the "fast path" directly to END (~1.5s latency).
-   - Conflicting questions skip vector re-queries because the conflict is resolved via date precedence in the Synthesizer.
-"""
+"""LangGraph multi-agent workflow: Router -> Retriever -> Synthesizer -> Verifier."""
 
 from langgraph.graph import StateGraph, START, END
 
@@ -40,24 +11,14 @@ from src.agents import router_node, retriever_node, synthesizer_node, verifier_n
 # ─────────────────────────────────────────────
 
 def after_router(state: AgentState) -> str:
-    """
-    Decides the next node after the Router agent.
-    - If needs_retrieval is False (e.g., greetings, general questions), routes to fast unsupported_node.
-    - If needs_retrieval is True, routes to the semantic Retriever agent.
-    """
+    """Routes to retriever if query requires search, else fast-path unsupported node."""
     if not state.get("needs_retrieval", True):
         return "end_unsupported"
     return "retriever"
 
 
 def after_verifier(state: AgentState) -> str:
-    """
-    Evaluates the Verifier's factual claim audit to determine whether to finalize or retry.
-    - If overall_supported is True: accepts answer and routes to END.
-    - If query is 'conflicting' or 'unsupported': accepts without retry (date precedence already resolved it).
-    - If claims failed verification and retry_count < 1: loops back to increment_retry -> retriever.
-    - Otherwise: accepts best-effort qualified answer to avoid infinite loops.
-    """
+    """Accepts verified answer or triggers single retry if claims lack support."""
     if state.get("overall_supported", True):
         return "accept"
 
@@ -92,10 +53,7 @@ IDENTITY_PATTERNS = {
 
 
 def unsupported_node(state: AgentState) -> dict:
-    """
-    Generates an immediate, polite response for conversational messages or out-of-domain queries
-    without performing expensive vector store lookups.
-    """
+    """Fast-path response for greetings, conversational remarks, or out-of-domain queries."""
     query_type = state.get("query_type", "")
     query = (state.get("current_query", "") or "").strip().lower()
     clean_query = "".join(c for c in query if c.isalnum() or c.isspace()).strip()
@@ -147,10 +105,7 @@ def increment_retry(state: AgentState) -> dict:
 # ─────────────────────────────────────────────
 
 def build_graph():
-    """
-    Assembles the LangGraph StateGraph, adds nodes, wires conditional edges,
-    and returns the compiled executable runnable.
-    """
+    """Assembles and compiles the StateGraph connecting all agent nodes."""
     workflow = StateGraph(AgentState)
 
     # Register the agent nodes
