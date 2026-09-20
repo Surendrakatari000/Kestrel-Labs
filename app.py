@@ -79,122 +79,113 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 
 
-# Inject CSS to immediately hide any Streamlit stale/ghost elements
-st.html(
-    """
-    <style>
-    /* Completely suppress Streamlit's stale/faded ghost elements */
-    [data-stale="true"], .stElement-stale {
-        display: none !important;
-        opacity: 0 !important;
-        visibility: hidden !important;
-        height: 0px !important;
-        margin: 0px !important;
-        padding: 0px !important;
-    }
-    </style>
-    """
-)
-
 # ─────────────────────────────────────────────
 # 4. Welcome & Starter Suggestions (when empty)
 # ─────────────────────────────────────────────
-welcome_placeholder = st.empty()
+def ask_question(q: str):
+    """Callback fired on button click before the script runs."""
+    st.session_state.messages.append(HumanMessage(content=q))
+
 
 if not st.session_state.messages:
-    with welcome_placeholder.container():
-        st.markdown("""
-        ### 👋 Welcome! How can I help you today?
-        Ask any question about Kestrel Labs products, pricing plans, engineering runbooks, or company policies.
-        I search official company documents to give you verified, up-to-date answers with source citations.
-        """)
+    st.markdown("""
+    ### 👋 Welcome! How can I help you today?
+    Ask any question about Kestrel Labs products, pricing plans, engineering runbooks, or company policies.
+    I search official company documents to give you verified, up-to-date answers with source citations.
+    """)
 
-        st.markdown("**Try asking one of these common questions:**")
+    st.markdown("**Try asking one of these common questions:**")
 
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("🔔 How do Beacons work and how often are they evaluated?", use_container_width=True):
-                welcome_placeholder.empty()
-                st.session_state.messages.append(HumanMessage(content="How do Beacons work and how often are they evaluated?"))
-                st.rerun()
-            if st.button("⚡ What caused incident INC-2025-11 and how was it fixed?", use_container_width=True):
-                welcome_placeholder.empty()
-                st.session_state.messages.append(HumanMessage(content="What caused the Warehouse Sync duplicate rows incident (INC-2025-11) and how was deduplication fixed?"))
-                st.rerun()
+    col1, col2 = st.columns(2)
+    with col1:
+        st.button(
+            "🔔 How do Beacons work and how often are they evaluated?",
+            use_container_width=True,
+            on_click=ask_question,
+            args=("How do Beacons work and how often are they evaluated?",),
+        )
+        st.button(
+            "⚡ What caused incident INC-2025-11 and how was it fixed?",
+            use_container_width=True,
+            on_click=ask_question,
+            args=("What caused the Warehouse Sync duplicate rows incident (INC-2025-11) and how was deduplication fixed?",),
+        )
 
-        with col2:
-            if st.button("💰 What is the overage fee and allowance on Growth?", use_container_width=True):
-                welcome_placeholder.empty()
-                st.session_state.messages.append(HumanMessage(content="How much does overage cost on the Growth plan, and what is the monthly event allowance?"))
-                st.rerun()
-            if st.button("🛡️ How long are raw events kept in cold storage?", use_container_width=True):
-                welcome_placeholder.empty()
-                st.session_state.messages.append(HumanMessage(content="How long are raw events kept in cold storage after the plan retention window ends?"))
-                st.rerun()
+    with col2:
+        st.button(
+            "💰 What is the overage fee and allowance on Growth?",
+            use_container_width=True,
+            on_click=ask_question,
+            args=("How much does overage cost on the Growth plan, and what is the monthly event allowance?",),
+        )
+        st.button(
+            "🛡️ How long are raw events kept in cold storage?",
+            use_container_width=True,
+            on_click=ask_question,
+            args=("How long are raw events kept in cold storage after the plan retention window ends?",),
+        )
 
-        st.divider()
-else:
-    welcome_placeholder.empty()
+    st.divider()
 
 
 # ─────────────────────────────────────────────
 # 5. Render Conversation & Active Turn
 # ─────────────────────────────────────────────
-chat_container = st.container()
+# Render all conversation history up to the latest turn
+for msg in st.session_state.messages[:-1] if (st.session_state.messages and isinstance(st.session_state.messages[-1], HumanMessage)) else st.session_state.messages:
+    role = "user" if isinstance(msg, HumanMessage) else "assistant"
+    with st.chat_message(role):
+        st.markdown(msg.content)
 
-with chat_container:
-    is_generating = bool(st.session_state.messages and isinstance(st.session_state.messages[-1], HumanMessage))
+# If the latest message is a user message needing an answer, run the assistant!
+if st.session_state.messages and isinstance(st.session_state.messages[-1], HumanMessage):
+    latest_user_msg = st.session_state.messages[-1]
+    with st.chat_message("user"):
+        st.markdown(latest_user_msg.content)
 
-    for msg in st.session_state.messages:
-        role = "user" if isinstance(msg, HumanMessage) else "assistant"
-        with st.chat_message(role):
-            st.markdown(msg.content)
+    with st.chat_message("assistant"):
+        status_area = st.empty()
+        status_area.markdown("🧠 *Understanding question...*")
+        final_answer = ""
 
-    if is_generating:
-        with st.chat_message("assistant"):
-            status_area = st.empty()
-            status_area.markdown("🧠 *Understanding question...*")
-            final_answer = ""
+        state_input = {
+            "messages": list(st.session_state.messages),
+            "retry_count": 0,
+        }
 
-            state_input = {
-                "messages": list(st.session_state.messages),
-                "retry_count": 0,
-            }
+        try:
+            for step_output in st.session_state.graph.stream(state_input):
+                for node_name, node_state in step_output.items():
+                    if node_name == "router":
+                        status_area.markdown("🔍 *Searching company docs...*")
 
-            try:
-                for step_output in st.session_state.graph.stream(state_input):
-                    for node_name, node_state in step_output.items():
-                        if node_name == "router":
-                            status_area.markdown("🔍 *Searching company docs...*")
+                    elif node_name == "retriever":
+                        status_area.markdown("✍️ *Synthesizing answer...*")
 
-                        elif node_name == "retriever":
-                            status_area.markdown("✍️ *Synthesizing answer...*")
+                    elif node_name == "synthesizer":
+                        status_area.markdown("🛡️ *Fact-checking claims...*")
 
-                        elif node_name == "synthesizer":
-                            status_area.markdown("🛡️ *Fact-checking claims...*")
+                    elif node_name == "verifier":
+                        final_answer = node_state.get("final_answer", "")
 
-                        elif node_name == "verifier":
-                            final_answer = node_state.get("final_answer", "")
+                    elif node_name == "increment_retry":
+                        status_area.markdown("🔍 *Searching company docs...*")
 
-                        elif node_name == "increment_retry":
-                            status_area.markdown("🔍 *Searching company docs...*")
+                    elif node_name == "unsupported":
+                        final_answer = node_state.get("final_answer", "")
 
-                        elif node_name == "unsupported":
-                            final_answer = node_state.get("final_answer", "")
+            status_area.empty()
 
-                status_area.empty()
+            if final_answer:
+                st.markdown(final_answer)
+                st.session_state.messages.append(AIMessage(content=final_answer))
 
-                if final_answer:
-                    st.session_state.messages.append(AIMessage(content=final_answer))
-                    st.rerun()
-
-            except Exception as e:
-                status_area.empty()
-                err_msg = f"Error: {e}"
-                st.error(err_msg)
-                st.info("Check your `.env` file: is `GROQ_API_KEY` configured?")
-                st.session_state.messages.append(AIMessage(content=err_msg))
-                st.rerun()
+        except Exception as e:
+            status_area.empty()
+            err_msg = f"Error: {e}"
+            st.error(err_msg)
+            st.info("Check your `.env` file: is `GROQ_API_KEY` configured?")
+            st.session_state.messages.append(AIMessage(content=err_msg))
 
 
 # ─────────────────────────────────────────────
@@ -222,6 +213,5 @@ st.html(
 )
 
 if chat_input:
-    welcome_placeholder.empty()
     st.session_state.messages.append(HumanMessage(content=chat_input))
     st.rerun()
