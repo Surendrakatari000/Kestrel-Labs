@@ -36,8 +36,8 @@ METRICS_PATH = BASE_DIR / "results" / "metrics_summary.json"
 
 
 def extract_citations(text: str) -> list:
-    """Extracts chunk_id references from [chunk_id: ...] patterns."""
-    pattern = r"\[([a-zA-Z0-9\-]+:[0-9]+)"
+    """Extracts chunk_id references from [chunk_id: ...] and 【chunk_id: ...】 patterns."""
+    pattern = r"[\[\【]([a-zA-Z0-9\-]+:[0-9]+)"
     return list(set(re.findall(pattern, text)))
 
 
@@ -71,35 +71,61 @@ def run_single_question(graph, question: dict, history: list = None) -> dict:
 
         retrieved_ids = [c["metadata"].get("chunk_id", "") for c in chunks]
         cited_ids = extract_citations(final_answer)
+        recall = compute_citation_recall(question.get("expected_chunk_ids", []), cited_ids)
+
+        # Primary verifier verdict summary
+        if verdicts:
+            verdict_counts = {}
+            for v in verdicts:
+                v_type = v.get("verdict", "unsupported")
+                verdict_counts[v_type] = verdict_counts.get(v_type, 0) + 1
+            primary_verdict = max(verdict_counts, key=verdict_counts.get)
+        else:
+            primary_verdict = "insufficient_evidence" if question["type"] == "unsupported" else "unverified"
+
+        # Approximate token usage (prompt + completion)
+        est_tokens = len((current_query + final_answer + str(chunks)).split()) * 2
+
+        langchain_project = os.getenv("LANGCHAIN_PROJECT", "kestrel-research-assistant")
+        langsmith_url = f"https://smith.langchain.com/projects/{langchain_project}"
 
         return {
             "question_id": question["question_id"],
+            "answer": final_answer,
+            "citations": cited_ids,
+            "retrieved_chunk_ids": retrieved_ids,
+            "verifier_verdict": primary_verdict,
+            "scores": {
+                "citation_recall": recall,
+            },
+            "latency_seconds": round(latency, 2),
+            "langsmith_run_url": langsmith_url,
+            # Additional diagnostic details
             "question": question["question"],
             "type": question["type"],
             "router_query": current_query,
             "router_type": query_type,
-            "retrieved_chunk_ids": retrieved_ids,
-            "cited_chunk_ids": cited_ids,
-            "expected_chunk_ids": question.get("expected_chunk_ids", []),
-            "final_answer": final_answer,
-            "verdicts": verdicts,
-            "citation_recall": compute_citation_recall(
-                question.get("expected_chunk_ids", []), cited_ids
-            ),
-            "latency_seconds": round(latency, 2),
+            "estimated_tokens": est_tokens,
             "error": None,
         }
 
     except Exception as e:
         latency = time.time() - start
+        langchain_project = os.getenv("LANGCHAIN_PROJECT", "kestrel-research-assistant")
         return {
             "question_id": question["question_id"],
+            "answer": "",
+            "citations": [],
+            "retrieved_chunk_ids": [],
+            "verifier_verdict": "error",
+            "scores": {
+                "citation_recall": 0.0,
+            },
+            "latency_seconds": round(latency, 2),
+            "langsmith_run_url": f"https://smith.langchain.com/projects/{langchain_project}",
             "question": question["question"],
             "type": question["type"],
-            "final_answer": "",
             "error": str(e),
-            "latency_seconds": round(latency, 2),
-            "citation_recall": 0.0,
         }
 
 
@@ -108,6 +134,13 @@ def main():
     print("Kestrel Research Assistant — Evaluation Suite")
     print("=" * 60)
 
+    # 1. Ensure ChromaDB is initialized / auto-ingests corpus.jsonl
+    from src.vectorstore import get_collection, EMBEDDING_MODEL_NAME
+    print("Verifying vector store...")
+    collection = get_collection()
+    print(f"Vector store ready ({collection.count()} chunks indexed).\n")
+
+    wall_start = time.time()
     graph = build_graph()
 
     # Load questions
@@ -139,16 +172,18 @@ def main():
         if q["type"] == "follow_up":
             new_history = list(history) + [
                 HumanMessage(content=q["question"]),
-                AIMessage(content=result.get("final_answer", "")),
+                AIMessage(content=result.get("answer", "")),
             ]
             follow_up_history[q["question_id"]] = new_history
 
         status = "✅" if result.get("error") is None else "❌"
-        recall = result.get("citation_recall", 0)
+        recall = result.get("scores", {}).get("citation_recall", 0)
         print(f"  {status}  Recall: {recall:.0%}  Latency: {result['latency_seconds']}s")
 
         # Rate limit safety: small delay between questions
         time.sleep(2)
+
+    total_wall_clock = round(time.time() - wall_start, 2)
 
     # ── Write results ──
     with open(RESULTS_PATH, "w", encoding="utf-8") as f:
@@ -159,8 +194,9 @@ def main():
     # ── Compute aggregate metrics ──
     total = len(results)
     errors = sum(1 for r in results if r.get("error"))
-    avg_recall = sum(r["citation_recall"] for r in results) / total if total else 0
+    avg_recall = sum(r["scores"]["citation_recall"] for r in results) / total if total else 0
     avg_latency = sum(r["latency_seconds"] for r in results) / total if total else 0
+    total_tokens = sum(r.get("estimated_tokens", 0) for r in results)
 
     by_type = {}
     for r in results:
@@ -168,7 +204,7 @@ def main():
         if t not in by_type:
             by_type[t] = {"count": 0, "total_recall": 0, "total_latency": 0}
         by_type[t]["count"] += 1
-        by_type[t]["total_recall"] += r["citation_recall"]
+        by_type[t]["total_recall"] += r["scores"]["citation_recall"]
         by_type[t]["total_latency"] += r["latency_seconds"]
 
     type_metrics = {}
@@ -179,11 +215,17 @@ def main():
             "avg_latency_seconds": round(v["total_latency"] / v["count"], 2),
         }
 
+    generation_model = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+
     metrics = {
         "total_questions": total,
         "errors": errors,
         "avg_citation_recall": round(avg_recall, 3),
         "avg_latency_seconds": round(avg_latency, 2),
+        "total_wall_clock_time": total_wall_clock,
+        "total_token_usage": total_tokens,
+        "generation_model": generation_model,
+        "embedding_model": EMBEDDING_MODEL_NAME,
         "by_type": type_metrics,
     }
 
@@ -199,10 +241,14 @@ def main():
     print(f"Errors:              {errors}")
     print(f"Avg citation recall: {avg_recall:.1%}")
     print(f"Avg latency:         {avg_latency:.1f}s")
+    print(f"Total wall-clock:    {total_wall_clock:.1f}s")
+    print(f"Est. token usage:    {total_tokens}")
+    print(f"Generation model:    {generation_model}")
+    print(f"Embedding model:     {EMBEDDING_MODEL_NAME}")
     for t, m in type_metrics.items():
         print(f"  {t:20s}  recall={m['avg_citation_recall']:.1%}  latency={m['avg_latency_seconds']:.1f}s  (n={m['count']})")
     print("=" * 60)
-    print("Check LangSmith for full traces: https://smith.langchain.com")
+    print(f"Check LangSmith for full traces: https://smith.langchain.com/projects/{os.getenv('LANGCHAIN_PROJECT', 'kestrel-research-assistant')}")
 
 
 if __name__ == "__main__":

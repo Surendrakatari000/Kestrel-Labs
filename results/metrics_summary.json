@@ -1,33 +1,37 @@
 {
   "total_questions": 15,
   "errors": 0,
-  "avg_citation_recall": 0.522,
-  "avg_latency_seconds": 27.19,
+  "avg_citation_recall": 0.622,
+  "avg_latency_seconds": 26.32,
+  "total_wall_clock_time": 424.9,
+  "total_token_usage": 17910,
+  "generation_model": "openai/gpt-oss-120b",
+  "embedding_model": "all-MiniLM-L6-v2",
   "by_type": {
     "single_hop": {
       "count": 4,
       "avg_citation_recall": 0.75,
-      "avg_latency_seconds": 15.52
+      "avg_latency_seconds": 15.15
     },
     "multi_hop": {
       "count": 4,
-      "avg_citation_recall": 0.375,
-      "avg_latency_seconds": 30.33
+      "avg_citation_recall": 0.292,
+      "avg_latency_seconds": 31.43
     },
     "conflicting": {
       "count": 3,
-      "avg_citation_recall": 0.111,
-      "avg_latency_seconds": 49.76
+      "avg_citation_recall": 0.722,
+      "avg_latency_seconds": 46.81
     },
     "unsupported": {
       "count": 2,
       "avg_citation_recall": 1.0,
-      "avg_latency_seconds": 20.31
+      "avg_latency_seconds": 17.2
     },
     "follow_up": {
       "count": 2,
       "avg_citation_recall": 0.5,
-      "avg_latency_seconds": 17.3
+      "avg_latency_seconds": 16.86
     }
   }
 }

@@ -30,34 +30,39 @@ User ─► Router ─► Retriever ─► Synthesizer ─► Verifier ─► An
 
 ## Quick Start
 
+### 1. Setup Environment
 ```bash
-# 1. Clone and enter the project
-cd "ccoding assignment -1"
+# Clone and enter the project
+git clone https://github.com/Surendrakatari000/Kestrel-Labs.git
+cd Kestrel-Labs
 
-# 2. Create & activate virtual environment
+# Create & activate virtual environment
 python -m venv venv
 # Windows:
 .\venv\Scripts\activate
 # Mac/Linux:
 source venv/bin/activate
 
-# 3. Install dependencies
+# Install dependencies
 pip install -r requirements.txt
 
-# 4. Set up environment
+# Set up environment variables
 cp .env.example .env
 # Edit .env and add your actual keys:
 #   GROQ_API_KEY=gsk_...
 #   LANGCHAIN_API_KEY=lsv2_...
+```
 
-# 5. Ingest corpus into ChromaDB (skip if chroma_db/ already exists)
-python src/vectorstore.py
-
-# 6. Run the chat UI
-streamlit run app.py
-
-# 7. Run the evaluation suite
+### 2. Single-Command End-to-End Run
+Per the assignment specification, after setting `.env`, the entire system runs with a single command:
+```bash
 python run_evals.py
+```
+> **Note:** You do **not** need to manually ingest the corpus first. `run_evals.py` and `app.py` automatically detect if `chroma_db/` exists, and will auto-ingest `corpus.jsonl` on the first run.
+
+### 3. Launch Interactive Chat UI
+```bash
+streamlit run app.py
 ```
 
 ## Evaluation
@@ -73,9 +78,14 @@ The evaluation suite (`run_evals.py`) tests 15 questions across 5 categories:
 | **follow_up** | 2 | Multi-turn pronoun resolution |
 
 Results are written to:
-- `results/eval_results.jsonl` — per-question outputs
-- `results/metrics_summary.json` — aggregate scores
-- LangSmith traces — full agent execution logs
+- `results/eval_results.jsonl` — per-question outputs (matching exact required schema)
+- `results/metrics_summary.json` — aggregate scores, latency, models, and type breakdowns
+- LangSmith traces — full agent execution logs and traces
+
+## Observability & LangSmith Sharing
+
+All runs from both the evaluation suite and the Streamlit UI are traced to LangSmith (`LANGCHAIN_PROJECT=kestrel-research-assistant`). Reviewers can inspect the full agent workflow: from router classification, to semantic retrieval, to synthesis, to fact-checking verification.
+- **Reviewer access:** Per the assignment instructions, project access should be shared with `radialpulse@nxtwave.co.in`.
 
 ## File Structure
 
