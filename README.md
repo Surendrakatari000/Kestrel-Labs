@@ -94,6 +94,8 @@ All runs from both the evaluation suite and the Streamlit UI are traced to LangS
 ├── .env.example          # Environment template
 ├── requirements.txt      # Python dependencies
 ├── README.md             # This file
+├── DESIGN.md             # Architecture diagram, agent roles & handoffs
+├── REFLECTION.md         # Engineering reflection, trade-offs & latency
 ├── app.py                # Streamlit frontend
 ├── run_evals.py          # Evaluation runner
 ├── src/
