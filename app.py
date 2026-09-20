@@ -86,10 +86,13 @@ if not st.session_state.messages:
 # ─────────────────────────────────────────────
 # 5. Render Conversation History
 # ─────────────────────────────────────────────
-for msg in st.session_state.messages:
-    role = "user" if isinstance(msg, HumanMessage) else "assistant"
-    with st.chat_message(role):
-        st.markdown(msg.content)
+chat_container = st.container()
+
+with chat_container:
+    for msg in st.session_state.messages:
+        role = "user" if isinstance(msg, HumanMessage) else "assistant"
+        with st.chat_message(role):
+            st.markdown(msg.content)
 
 
 # ─────────────────────────────────────────────
@@ -105,48 +108,52 @@ if user_input:
 
     # Add user message
     st.session_state.messages.append(HumanMessage(content=user_input))
-    with st.chat_message("user"):
-        st.markdown(user_input)
 
-    with st.chat_message("assistant"):
-        status_area = st.empty()
-        status_area.markdown("🧠 *Understanding question...*")
-        final_answer = ""
+    with chat_container:
+        with st.chat_message("user"):
+            st.markdown(user_input)
 
-        state_input = {
-            "messages": list(st.session_state.messages),
-            "retry_count": 0,
-        }
+        with st.chat_message("assistant"):
+            status_area = st.empty()
+            status_area.markdown("🧠 *Understanding question...*")
+            final_answer = ""
 
-        try:
-            for step_output in st.session_state.graph.stream(state_input):
-                for node_name, node_state in step_output.items():
-                    if node_name == "router":
-                        status_area.markdown("🔍 *Searching company docs...*")
+            state_input = {
+                "messages": list(st.session_state.messages),
+                "retry_count": 0,
+            }
 
-                    elif node_name == "retriever":
-                        status_area.markdown("✍️ *Synthesizing answer...*")
+            try:
+                for step_output in st.session_state.graph.stream(state_input):
+                    for node_name, node_state in step_output.items():
+                        if node_name == "router":
+                            status_area.markdown("🔍 *Searching company docs...*")
 
-                    elif node_name == "synthesizer":
-                        status_area.markdown("🛡️ *Fact-checking claims...*")
+                        elif node_name == "retriever":
+                            status_area.markdown("✍️ *Synthesizing answer...*")
 
-                    elif node_name == "verifier":
-                        final_answer = node_state.get("final_answer", "")
+                        elif node_name == "synthesizer":
+                            status_area.markdown("🛡️ *Fact-checking claims...*")
 
-                    elif node_name == "increment_retry":
-                        status_area.markdown("🔍 *Searching company docs...*")
+                        elif node_name == "verifier":
+                            final_answer = node_state.get("final_answer", "")
 
-                    elif node_name == "unsupported":
-                        final_answer = node_state.get("final_answer", "")
+                        elif node_name == "increment_retry":
+                            status_area.markdown("🔍 *Searching company docs...*")
 
-            # Clear status and show answer
-            status_area.empty()
+                        elif node_name == "unsupported":
+                            final_answer = node_state.get("final_answer", "")
 
-            if final_answer:
-                st.markdown(final_answer)
-                st.session_state.messages.append(AIMessage(content=final_answer))
+                status_area.empty()
 
-        except Exception as e:
-            status_area.empty()
-            st.error(f"Error: {e}")
-            st.info("Check your `.env` file: is `GROQ_API_KEY` configured?")
+                if final_answer:
+                    st.session_state.messages.append(AIMessage(content=final_answer))
+                    st.rerun()
+
+            except Exception as e:
+                status_area.empty()
+                err_msg = f"Error: {e}"
+                st.error(err_msg)
+                st.info("Check your `.env` file: is `GROQ_API_KEY` configured?")
+                st.session_state.messages.append(AIMessage(content=err_msg))
+                st.rerun()

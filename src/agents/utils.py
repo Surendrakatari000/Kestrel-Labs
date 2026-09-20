@@ -24,28 +24,47 @@ def _log_retry(retry_state):
 
 
 def _safe_invoke(llm, messages):
-    """Executes LLM call with bounded exponential backoff (4s -> 60s)."""
+    """Executes LLM call with bounded exponential backoff and quota fallback."""
     @retry(
-        stop=stop_after_attempt(4),
-        wait=wait_exponential(multiplier=2, min=4, max=60),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=2, min=3, max=15),
         retry=retry_if_exception_type(Exception),
         before_sleep=_log_retry,
         reraise=True,
     )
     def _call():
         return llm.invoke(messages)
-    return _call()
+
+    try:
+        return _call()
+    except Exception as e:
+        err = str(e).lower()
+        if "tokens per day" in err or "tpd" in err:
+            fallback = ChatGroq(model="openai/gpt-oss-20b", temperature=0, max_tokens=2048)
+            return fallback.invoke(messages)
+        raise
 
 
 def _safe_invoke_structured(structured_llm, messages):
     """Executes structured LLM call with bounded exponential backoff."""
     @retry(
-        stop=stop_after_attempt(4),
-        wait=wait_exponential(multiplier=2, min=4, max=60),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=2, min=3, max=15),
         retry=retry_if_exception_type(Exception),
         before_sleep=_log_retry,
         reraise=True,
     )
     def _call():
         return structured_llm.invoke(messages)
-    return _call()
+
+    try:
+        return _call()
+    except Exception as e:
+        err = str(e).lower()
+        if "tokens per day" in err or "tpd" in err:
+            # Recreate with 20b model fallback using same output schema
+            schema = getattr(structured_llm, "schema", None) or getattr(structured_llm, "_schema", None)
+            if schema:
+                fallback = ChatGroq(model="openai/gpt-oss-20b", temperature=0, max_tokens=2048).with_structured_output(schema)
+                return fallback.invoke(messages)
+        raise
