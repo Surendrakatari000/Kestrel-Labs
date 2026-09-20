@@ -33,12 +33,25 @@ def _get_llm(temperature: float = 0):
     )
 
 
+def _log_retry(retry_state):
+    """Logs rate-limit backoff events when tenacity retries an LLM call."""
+    exc = retry_state.outcome.exception()
+    sleep_time = retry_state.next_action.sleep
+    attempt = retry_state.attempt_number
+    print(
+        f"[RateLimit / Backoff] Transient error / HTTP 429: {exc}. "
+        f"Waiting {sleep_time:.1f}s before retry (attempt {attempt + 1}/4)...",
+        flush=True,
+    )
+
+
 def _safe_invoke(llm, messages):
     """Invoke LLM with exponential backoff on rate limit (HTTP 429)."""
     @retry(
         stop=stop_after_attempt(4),
         wait=wait_exponential(multiplier=2, min=4, max=60),
         retry=retry_if_exception_type(Exception),
+        before_sleep=_log_retry,
         reraise=True,
     )
     def _call():
@@ -52,6 +65,7 @@ def _safe_invoke_structured(structured_llm, messages):
         stop=stop_after_attempt(4),
         wait=wait_exponential(multiplier=2, min=4, max=60),
         retry=retry_if_exception_type(Exception),
+        before_sleep=_log_retry,
         reraise=True,
     )
     def _call():
