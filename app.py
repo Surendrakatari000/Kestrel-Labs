@@ -2,6 +2,7 @@
 
 import os
 import streamlit as st
+import streamlit.components.v1 as components
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage, AIMessage
 
@@ -99,6 +100,27 @@ with chat_container:
 # 6. Chat Input & Processing
 # ─────────────────────────────────────────────
 chat_input = st.chat_input("Ask about Kestrel (e.g. Is Trails available on the Starter plan?)")
+
+# Auto-focus chat input bar
+components.html(
+    """
+    <script>
+    function focusInput() {
+        try {
+            const doc = window.parent ? window.parent.document : document;
+            const textarea = doc.querySelector('textarea[data-testid="stChatInputTextArea"]');
+            if (textarea) {
+                textarea.focus();
+            }
+        } catch (e) {}
+    }
+    setTimeout(focusInput, 150);
+    setTimeout(focusInput, 500);
+    </script>
+    """,
+    height=0,
+    width=0,
+)
 
 user_input = prompt_to_submit or chat_input
 
