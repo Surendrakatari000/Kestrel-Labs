@@ -110,7 +110,7 @@ if user_input:
 
     with st.chat_message("assistant"):
         status_area = st.empty()
-        status_area.markdown("⏳ `Routing...`")
+        status_area.markdown("🧠 *Understanding question...*")
         final_answer = ""
 
         state_input = {
@@ -122,19 +122,19 @@ if user_input:
             for step_output in st.session_state.graph.stream(state_input):
                 for node_name, node_state in step_output.items():
                     if node_name == "router":
-                        status_area.markdown("⏳ `Retrieving...`")
+                        status_area.markdown("🔍 *Searching company docs...*")
 
                     elif node_name == "retriever":
-                        status_area.markdown("⏳ `Generating...`")
+                        status_area.markdown("✍️ *Synthesizing answer...*")
 
                     elif node_name == "synthesizer":
-                        status_area.markdown("⏳ `Checking...`")
+                        status_area.markdown("🛡️ *Fact-checking claims...*")
 
                     elif node_name == "verifier":
                         final_answer = node_state.get("final_answer", "")
 
                     elif node_name == "increment_retry":
-                        status_area.markdown("⏳ `Re-retrieving...`")
+                        status_area.markdown("🔍 *Searching company docs...*")
 
                     elif node_name == "unsupported":
                         final_answer = node_state.get("final_answer", "")
