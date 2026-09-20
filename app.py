@@ -27,28 +27,28 @@ from src.vectorstore import get_collection, get_embedding_function, EMBEDDING_MO
 if "chunk_count" not in st.session_state:
     loading_placeholder = st.empty()
     with loading_placeholder.container():
-        prog_bar = st.progress(0, text="Initializing Kestrel knowledge base & local embeddings... 0%")
+        prog_bar = st.progress(0, text="Loading company documents & assistant... 0%")
         
-        # Step 1: Connect to local ChromaDB
-        prog_bar.progress(20, text="Initializing Kestrel knowledge base & local embeddings... 20%")
+        # Step 1: Connect to document storage
+        prog_bar.progress(20, text="Loading company knowledge base... 20%")
         col = get_collection()
         chunk_count = col.count()
         
-        # Step 2: Load local embeddings model
-        prog_bar.progress(50, text="Initializing Kestrel knowledge base & local embeddings... 50%")
+        # Step 2: Load search engine
+        prog_bar.progress(50, text="Preparing smart search engine... 50%")
         _ = get_embedding_function()
         
-        # Step 3: Warm up vector search index
-        prog_bar.progress(75, text="Initializing Kestrel knowledge base & local embeddings... 75%")
+        # Step 3: Warm up index
+        prog_bar.progress(75, text="Indexing product guides and policies... 75%")
         _ = col.query(query_texts=["warmup"], n_results=1)
         
-        # Step 4: Pre-compile multi-agent graph
-        prog_bar.progress(90, text="Initializing Kestrel knowledge base & local embeddings... 90%")
+        # Step 4: Ready assistant
+        prog_bar.progress(90, text="Starting research assistant... 90%")
         if "graph" not in st.session_state:
             st.session_state.graph = build_graph()
             
-        # Step 5: Completed
-        prog_bar.progress(100, text="Initializing Kestrel knowledge base & local embeddings... 100%")
+        # Step 5: Ready
+        prog_bar.progress(100, text="Ready! 100%")
         time.sleep(0.3)
     
     loading_placeholder.empty()
@@ -64,7 +64,7 @@ header_col1, header_col2 = st.columns([0.78, 0.22], vertical_alignment="bottom")
 with header_col1:
     st.title("🐦 Kestrel Labs Research Assistant")
     st.caption(
-        f"Grounded Multi-Agent RAG over Kestrel Labs internal documentation • {chunk_count} chunks indexed across 25 docs"
+        "Your AI assistant for Kestrel Labs — product specs, pricing, engineering guides, and company policies."
     )
 
 with header_col2:
@@ -89,7 +89,8 @@ if not st.session_state.messages:
     with welcome_placeholder.container():
         st.markdown("""
         ### 👋 Welcome! How can I help you today?
-        I can retrieve verified evidence from company docs, resolve conflicting policies using publication dates, and cross-reference multiple specs.
+        Ask any question about Kestrel Labs products, pricing plans, engineering runbooks, or company policies.
+        I search official company documents to give you verified, up-to-date answers with source citations.
         """)
 
         st.markdown("**Try asking one of these common questions:**")
@@ -102,7 +103,7 @@ if not st.session_state.messages:
                 prompt_to_submit = "What caused the Warehouse Sync duplicate rows incident (INC-2025-11) and how was deduplication fixed?"
 
         with col2:
-            if st.button("💰 What is the overage cost and allowance on Growth?", use_container_width=True):
+            if st.button("💰 What is the overage fee and allowance on Growth?", use_container_width=True):
                 prompt_to_submit = "How much does overage cost on the Growth plan, and what is the monthly event allowance?"
             if st.button("🛡️ How long are raw events kept in cold storage?", use_container_width=True):
                 prompt_to_submit = "How long are raw events kept in cold storage after the plan retention window ends?"
