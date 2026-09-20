@@ -79,12 +79,30 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 
 
+# Inject CSS to immediately hide any Streamlit stale/ghost elements
+st.html(
+    """
+    <style>
+    /* Completely suppress Streamlit's stale/faded ghost elements */
+    [data-stale="true"], .stElement-stale {
+        display: none !important;
+        opacity: 0 !important;
+        visibility: hidden !important;
+        height: 0px !important;
+        margin: 0px !important;
+        padding: 0px !important;
+    }
+    </style>
+    """
+)
+
 # ─────────────────────────────────────────────
 # 4. Welcome & Starter Suggestions (when empty)
 # ─────────────────────────────────────────────
+welcome_placeholder = st.empty()
+
 if not st.session_state.messages:
-    welcome_container = st.container()
-    with welcome_container:
+    with welcome_placeholder.container():
         st.markdown("""
         ### 👋 Welcome! How can I help you today?
         Ask any question about Kestrel Labs products, pricing plans, engineering runbooks, or company policies.
@@ -96,21 +114,27 @@ if not st.session_state.messages:
         col1, col2 = st.columns(2)
         with col1:
             if st.button("🔔 How do Beacons work and how often are they evaluated?", use_container_width=True):
+                welcome_placeholder.empty()
                 st.session_state.messages.append(HumanMessage(content="How do Beacons work and how often are they evaluated?"))
                 st.rerun()
             if st.button("⚡ What caused incident INC-2025-11 and how was it fixed?", use_container_width=True):
+                welcome_placeholder.empty()
                 st.session_state.messages.append(HumanMessage(content="What caused the Warehouse Sync duplicate rows incident (INC-2025-11) and how was deduplication fixed?"))
                 st.rerun()
 
         with col2:
             if st.button("💰 What is the overage fee and allowance on Growth?", use_container_width=True):
+                welcome_placeholder.empty()
                 st.session_state.messages.append(HumanMessage(content="How much does overage cost on the Growth plan, and what is the monthly event allowance?"))
                 st.rerun()
             if st.button("🛡️ How long are raw events kept in cold storage?", use_container_width=True):
+                welcome_placeholder.empty()
                 st.session_state.messages.append(HumanMessage(content="How long are raw events kept in cold storage after the plan retention window ends?"))
                 st.rerun()
 
         st.divider()
+else:
+    welcome_placeholder.empty()
 
 
 # ─────────────────────────────────────────────
@@ -198,5 +222,6 @@ st.html(
 )
 
 if chat_input:
+    welcome_placeholder.empty()
     st.session_state.messages.append(HumanMessage(content=chat_input))
     st.rerun()
