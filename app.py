@@ -110,6 +110,7 @@ if user_input:
 
     with st.chat_message("assistant"):
         status_area = st.empty()
+        status_area.markdown("⏳ `Routing...`")
         final_answer = ""
 
         state_input = {
@@ -118,33 +119,28 @@ if user_input:
         }
 
         try:
-            with st.spinner("Agents coordinating..."):
-                for step_output in st.session_state.graph.stream(state_input):
-                    for node_name, node_state in step_output.items():
-                        if node_name == "router":
-                            q_type = node_state.get("query_type", "single_hop")
-                            q_text = node_state.get("current_query", "")
-                            status_area.info(f"🔀 **Router Agent** → Categorized as `{q_type}`: *\"{q_text}\"*")
+            for step_output in st.session_state.graph.stream(state_input):
+                for node_name, node_state in step_output.items():
+                    if node_name == "router":
+                        status_area.markdown("⏳ `Routed` ➔ `Retrieving...`")
 
-                        elif node_name == "retriever":
-                            n_chunks = len(node_state.get("retrieved_chunks", []))
-                            status_area.info(f"🔍 **Retriever Agent** → Retrieved {n_chunks} relevant evidence chunks from ChromaDB")
+                    elif node_name == "retriever":
+                        n_chunks = len(node_state.get("retrieved_chunks", []))
+                        status_area.markdown(f"⏳ `Routed` ➔ `Retrieved ({n_chunks} chunks)` ➔ `Generating...`")
 
-                        elif node_name == "synthesizer":
-                            status_area.info("✍️ **Synthesizer Agent** → Drafting grounded response with strict source citations...")
+                    elif node_name == "synthesizer":
+                        status_area.markdown("⏳ `Routed` ➔ `Retrieved` ➔ `Generated` ➔ `Checking...`")
 
-                        elif node_name == "verifier":
-                            overall = node_state.get("overall_supported", True)
-                            verdict_msg = "All claims verified & supported" if overall else "Verifying claims & qualifying gaps"
-                            status_area.info(f"🛡️ **Verifier Agent** → {verdict_msg}")
-                            final_answer = node_state.get("final_answer", "")
+                    elif node_name == "verifier":
+                        status_area.markdown("✅ `Routed` ➔ `Retrieved` ➔ `Generated` ➔ `Checked`")
+                        final_answer = node_state.get("final_answer", "")
 
-                        elif node_name == "increment_retry":
-                            status_area.warning("🔄 **Verifier Retry** → Re-querying knowledge base for missing claims...")
+                    elif node_name == "increment_retry":
+                        status_area.markdown("🔄 `Routed` ➔ `Re-retrieving` ➔ `Re-generating...`")
 
-                        elif node_name == "unsupported":
-                            final_answer = node_state.get("final_answer", "")
-                            status_area.info("⚠️ **Knowledge Base** → Query falls outside documented company information")
+                    elif node_name == "unsupported":
+                        final_answer = node_state.get("final_answer", "")
+                        status_area.markdown("⚠️ `Routed` ➔ `Unsupported topic`")
 
             # Clear status and show answer
             status_area.empty()
