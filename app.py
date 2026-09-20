@@ -86,15 +86,15 @@ else:
 # ─────────────────────────────────────────────
 # 2. Main Header & Clear Conversation Button
 # ─────────────────────────────────────────────
-header_col1, header_col2 = st.columns([0.78, 0.22], vertical_alignment="bottom")
+header_col1, header_col2 = st.columns([0.72, 0.28], vertical_alignment="bottom")
 with header_col1:
     st.title("🐦 Kestrel Labs Research Assistant")
     st.caption(
-        "Your AI assistant for Kestrel Labs — product specs, pricing, engineering guides, and company policies."
+        f"Your AI assistant for Kestrel Labs • **{chunk_count} docs indexed** • **4 active agents**"
     )
 
 with header_col2:
-    if st.button("🧹 Clear Conversation", use_container_width=True):
+    if st.button("🧹 Clear Chat", use_container_width=True):
         st.session_state.messages = []
         st.rerun()
 
@@ -106,7 +106,7 @@ if "messages" not in st.session_state:
 
 
 # ─────────────────────────────────────────────
-# 4. Welcome & Starter Suggestions (when empty)
+# 3. Welcome & Starter Suggestions (when empty)
 # ─────────────────────────────────────────────
 def ask_question(q: str):
     """Callback fired on button click before the script runs."""
@@ -125,28 +125,32 @@ if not st.session_state.messages:
     col1, col2 = st.columns(2)
     with col1:
         st.button(
-            "🔔 How do Beacons work and how often are they evaluated?",
+            "🔔 Beacons & Evaluation Frequency",
             use_container_width=True,
+            help="What is a Beacon and how often is it evaluated?",
             on_click=ask_question,
             args=("How do Beacons work and how often are they evaluated?",),
         )
         st.button(
-            "⚡ What caused incident INC-2025-11 and how was it fixed?",
+            "⚡ Incident INC-2025-11 Deduplication",
             use_container_width=True,
+            help="What caused the Warehouse Sync duplicate rows incident (INC-2025-11) and how was deduplication fixed?",
             on_click=ask_question,
             args=("What caused the Warehouse Sync duplicate rows incident (INC-2025-11) and how was deduplication fixed?",),
         )
 
     with col2:
         st.button(
-            "💰 What is the overage fee and allowance on Growth?",
+            "💰 Growth Plan Overage & Limits",
             use_container_width=True,
+            help="How much does overage cost on the Growth plan, and what is the monthly event allowance?",
             on_click=ask_question,
             args=("How much does overage cost on the Growth plan, and what is the monthly event allowance?",),
         )
         st.button(
-            "🛡️ How long are raw events kept in cold storage?",
+            "🛡️ Cold Storage Retention Policy",
             use_container_width=True,
+            help="How long are raw events kept in cold storage after the plan retention window ends?",
             on_click=ask_question,
             args=("How long are raw events kept in cold storage after the plan retention window ends?",),
         )
@@ -155,11 +159,30 @@ if not st.session_state.messages:
 
 
 # ─────────────────────────────────────────────
-# 5. Render Conversation & Active Turn
+# 4. Render Conversation & Active Turn
 # ─────────────────────────────────────────────
-def render_assistant_content(content: str):
-    """Renders the assistant response and visibly displays its citations (chunk_id and title)."""
-    st.markdown(content)
+def render_assistant_content(content: str, steps: list = None, stream: bool = False):
+    """Renders the assistant response, agent workflow trace, and citations."""
+    if steps:
+        with st.expander("🤖 Multi-Agent Workflow Trace", expanded=False):
+            for step in steps:
+                st.markdown(step)
+
+    if stream:
+        def _token_stream():
+            lines = content.split("\n")
+            for i, line in enumerate(lines):
+                words = line.split(" ")
+                for j, word in enumerate(words):
+                    yield word + (" " if j < len(words) - 1 else "")
+                    time.sleep(0.01)
+                if i < len(lines) - 1:
+                    yield "\n"
+
+        st.write_stream(_token_stream)
+    else:
+        st.markdown(content)
+
     sources = extract_cited_sources(content)
     if sources:
         with st.expander(f"📚 Citations & Evidence ({len(sources)} sources)", expanded=False):
@@ -174,7 +197,9 @@ for msg in st.session_state.messages[:-1] if (st.session_state.messages and isin
     role = "user" if isinstance(msg, HumanMessage) else "assistant"
     with st.chat_message(role):
         if role == "assistant":
-            render_assistant_content(msg.content)
+            steps = msg.additional_kwargs.get("steps", [])
+            render_assistant_content(msg.content, steps=steps, stream=False)
+
         else:
             st.markdown(msg.content)
 
@@ -185,97 +210,80 @@ if st.session_state.messages and isinstance(st.session_state.messages[-1], Human
         st.markdown(latest_user_msg.content)
 
     with st.chat_message("assistant"):
-        status_area = st.empty()
-        status_area.markdown("🧠 *Understanding question...*")
         final_answer = ""
+        recorded_steps = []
 
         state_input = {
             "messages": list(st.session_state.messages),
             "retry_count": 0,
         }
 
-        try:
-            for step_output in st.session_state.graph.stream(state_input):
-                for node_name, node_state in step_output.items():
-                    if node_name == "router":
-                        status_area.markdown("🔍 *Searching company docs...*")
+        with st.status("🤖 Multi-Agent Workflow in progress...", expanded=True) as status_box:
+            try:
+                for step_output in st.session_state.graph.stream(state_input):
+                    for node_name, node_state in step_output.items():
+                        if node_name == "router":
+                            qtype = node_state.get("query_type", "single_hop")
+                            q = node_state.get("current_query", "")
+                            step_text = f"🧠 **Router Agent:** Classified as `{qtype}`" + (f" → *\"{q}\"*" if q else "")
+                            st.write(step_text)
+                            recorded_steps.append(step_text)
 
-                    elif node_name == "retriever":
-                        status_area.markdown("✍️ *Synthesizing answer...*")
+                        elif node_name == "retriever":
+                            chunks = node_state.get("retrieved_chunks", [])
+                            step_text = f"🔍 **Retriever Agent:** Retrieved **{len(chunks)} evidence chunks** from vector store"
+                            st.write(step_text)
+                            recorded_steps.append(step_text)
 
-                    elif node_name == "synthesizer":
-                        status_area.markdown("🛡️ *Fact-checking claims...*")
+                        elif node_name == "synthesizer":
+                            step_text = "✍️ **Synthesizer Agent:** Drafted answer with grounded citations"
+                            st.write(step_text)
+                            recorded_steps.append(step_text)
 
-                    elif node_name == "verifier":
-                        final_answer = node_state.get("final_answer", "")
+                        elif node_name == "verifier":
+                            final_answer = node_state.get("final_answer", "")
+                            verdicts = node_state.get("verifier_verdicts", [])
+                            all_sup = node_state.get("overall_supported", True)
+                            icon = "✅" if all_sup else "⚠️"
+                            note = "All claims verified against evidence" if all_sup else "Audited claims & qualified unbacked statements"
+                            step_text = f"🛡️ **Verifier Agent:** Audited {len(verdicts)} factual claims ({icon} {note})"
+                            st.write(step_text)
+                            recorded_steps.append(step_text)
 
-                    elif node_name == "increment_retry":
-                        status_area.markdown("🔍 *Searching company docs...*")
+                        elif node_name == "unsupported":
+                            final_answer = node_state.get("final_answer", "")
+                            step_text = "⚡ **Unsupported Node:** Conversational fast-path response"
+                            st.write(step_text)
+                            recorded_steps.append(step_text)
 
-                    elif node_name == "unsupported":
-                        final_answer = node_state.get("final_answer", "")
+                        elif node_name == "increment_retry":
+                            step_text = "🔄 **Retry Loop:** Re-retrieving context to verify unbacked claims..."
+                            st.write(step_text)
+                            recorded_steps.append(step_text)
 
-            status_area.empty()
+                status_box.update(label="✅ Multi-Agent Workflow Complete", state="complete", expanded=False)
 
-            if final_answer:
-                render_assistant_content(final_answer)
-                st.session_state.messages.append(AIMessage(content=final_answer))
+            except Exception as e:
+                status_box.update(label="❌ Workflow Error", state="error", expanded=True)
+                err_msg = f"Error: {e}"
+                st.error(err_msg)
+                st.info("Check your `.env` file: is `GROQ_API_KEY` configured?")
+                final_answer = err_msg
 
+        if final_answer:
+            render_assistant_content(final_answer, steps=None, stream=True)
+            st.session_state.messages.append(
+                AIMessage(content=final_answer, additional_kwargs={"steps": recorded_steps})
+            )
 
-        except Exception as e:
-            status_area.empty()
-            err_msg = f"Error: {e}"
-            st.error(err_msg)
-            st.info("Check your `.env` file: is `GROQ_API_KEY` configured?")
-            st.session_state.messages.append(AIMessage(content=err_msg))
 
 
 # ─────────────────────────────────────────────
-# 6. Chat Input & Processing
+# 5. Chat Input & Processing
 # ─────────────────────────────────────────────
 chat_input = st.chat_input("Ask about Kestrel (e.g. Is Trails available on the Starter plan?)")
-
-# Client-side DOM synchronization: auto-focus & instant removal of stale suggestion buttons
-st.html(
-    """
-    <script>
-    function cleanupAndFocus() {
-        try {
-            const doc = window.parent ? window.parent.document : document;
-
-            // Auto-focus chat input
-            const textarea = doc.querySelector('textarea[data-testid="stChatInputTextArea"]');
-            if (textarea) {
-                textarea.focus();
-            }
-
-            // If any chat messages are present, immediately purge any lingering suggestion buttons
-            const chatMessages = doc.querySelectorAll('[data-testid="stChatMessage"]');
-            if (chatMessages.length > 0) {
-                doc.querySelectorAll('button').forEach(btn => {
-                    const label = (btn.innerText || '').trim();
-                    if (label && !label.includes('Clear Conversation')) {
-                        const container = btn.closest('.stButton') || btn.closest('[data-testid="stHorizontalBlock"]') || btn;
-                        container.style.display = 'none';
-                    }
-                });
-                doc.querySelectorAll('p, h3, h4, div').forEach(el => {
-                    const text = (el.innerText || '').trim();
-                    if (text === 'Try asking one of these common questions:' || text.includes('Welcome! How can I help you today?')) {
-                        el.style.display = 'none';
-                    }
-                });
-            }
-        } catch (e) {}
-    }
-    cleanupAndFocus();
-    setTimeout(cleanupAndFocus, 50);
-    setTimeout(cleanupAndFocus, 150);
-    setTimeout(cleanupAndFocus, 400);
-    </script>
-    """
-)
 
 if chat_input:
     st.session_state.messages.append(HumanMessage(content=chat_input))
     st.rerun()
+

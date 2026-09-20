@@ -70,12 +70,23 @@ def verifier_node(state: AgentState) -> dict:
             {"claim": c.claim, "verdict": c.verdict, "explanation": c.explanation}
             for c in result.claims
         ]
-        normalized_answer = normalize_citations(result.revised_answer, chunks)
+        revised = result.revised_answer
+
+        # Guarantee citations are never stripped during verification rewrite
+        from src.utils.citations import extract_cited_sources
+        draft_sources = extract_cited_sources(draft, chunks)
+        revised_sources = extract_cited_sources(revised, chunks)
+        if draft_sources and not revised_sources:
+            citation_tail = "\n\n" + "\n".join(f"[{s['chunk_id']}: {s['title']}]" for s in draft_sources)
+            revised = revised.strip() + citation_tail
+
+        normalized_answer = normalize_citations(revised, chunks)
         return {
             "verifier_verdicts": verdicts,
             "overall_supported": result.overall_supported,
             "final_answer": normalized_answer,
         }
+
     except Exception as e:
         # Fallback: if parsing fails, preserve draft safely with normalized citations
         return {

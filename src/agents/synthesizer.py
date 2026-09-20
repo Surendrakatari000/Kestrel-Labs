@@ -33,7 +33,7 @@ RULES:
 2. Cite sources using exact format: [chunk_id: title]
    Example: "All Beacons are evaluated every 5 minutes [spec-beacons:1: Beacons: Alerting Specification]."
    Always include BOTH the chunk_id and title inside the square brackets.
-3. If sources disagree, compare 'published' dates. Trust the newer document and mention both.
+3. If sources disagree, compare 'published' dates. Trust the newer document and mention both, citing the chunk_id and title for EACH document mentioned (e.g. older doc states X [old_chunk_id: title], whereas newer policy states Y [new_chunk_id: title]).
 4. If context does not answer the query, reply:
    "The available documentation does not contain information to answer this question."
 5. Be concise and include specific numbers, limits, and details.

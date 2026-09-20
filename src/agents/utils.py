@@ -5,13 +5,13 @@ from langchain_groq import ChatGroq
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 
-def _get_llm(temperature: float = 0):
+def _get_llm(temperature: float = 0, model: str = None, max_tokens: int = 2048):
     """Initializes ChatGroq with output token limits."""
-    model_name = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+    model_name = model or os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
     return ChatGroq(
         model=model_name,
         temperature=temperature,
-        max_tokens=2048,
+        max_tokens=max_tokens,
     )
 
 
@@ -39,8 +39,10 @@ def _safe_invoke(llm, messages):
         return _call()
     except Exception as e:
         err = str(e).lower()
-        if "tokens per day" in err or "tpd" in err:
-            fallback = ChatGroq(model="openai/gpt-oss-20b", temperature=0, max_tokens=2048)
+        if "tokens per day" in err or "tpd" in err or "does not exist" in err or "404" in err:
+            # Fallback model with available daily token quota
+            alt_model = "qwen/qwen3.8-27b" if "gpt-oss" in str(getattr(llm, "model_name", "")) else "openai/gpt-oss-20b"
+            fallback = ChatGroq(model=alt_model, temperature=0, max_tokens=1024)
             return fallback.invoke(messages)
         raise
 
@@ -61,10 +63,11 @@ def _safe_invoke_structured(structured_llm, messages):
         return _call()
     except Exception as e:
         err = str(e).lower()
-        if "tokens per day" in err or "tpd" in err:
-            # Recreate with 20b model fallback using same output schema
+        if "tokens per day" in err or "tpd" in err or "does not exist" in err or "404" in err:
             schema = getattr(structured_llm, "schema", None) or getattr(structured_llm, "_schema", None)
             if schema:
-                fallback = ChatGroq(model="openai/gpt-oss-20b", temperature=0, max_tokens=2048).with_structured_output(schema)
+                alt_model = "qwen/qwen3.8-27b"
+                fallback = ChatGroq(model=alt_model, temperature=0, max_tokens=512).with_structured_output(schema)
                 return fallback.invoke(messages)
         raise
+

@@ -29,7 +29,7 @@
 
 - **Router Pronoun Resolution:** Rewriting conversational follow-ups into self-contained search queries increased follow-up citation recall from 0% to 50–100%.
 - **Date Precedence Rules:** Explicitly instructing the Synthesizer to compare `published` metadata successfully resolved documented conflicts (e.g., modern 30-day retention overriding older 90-day retention; $180 on-call stipend overriding older $150).
-- **LangSmith Tracing:** Having full trace visualization allowed us to identify exact latency bottlenecks and confirm agent hand-offs.
+- **LangSmith Tracing:** Having full trace visualization allowed us to identify exact latency bottlenecks and confirm agent hand-offs. The public traces and dataset evaluation can be inspected at: [https://smith.langchain.com/public/193ee189-07b8-4629-9319-eebd5b780402/d](https://smith.langchain.com/public/193ee189-07b8-4629-9319-eebd5b780402/d).
 
 ---
 

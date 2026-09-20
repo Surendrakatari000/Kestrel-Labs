@@ -1,11 +1,13 @@
-"""Router Agent: query classification and pronoun resolution."""
-
+import os
 from typing import List, Literal
 from pydantic import BaseModel, Field
 from langchain_core.messages import SystemMessage
 
 from src.state import AgentState
 from src.agents.utils import _get_llm, _safe_invoke_structured
+
+ROUTER_MODEL = os.getenv("GROQ_ROUTER_MODEL", os.getenv("GROQ_MODEL", "openai/gpt-oss-20b"))
+
 
 
 class RouteDecision(BaseModel):
@@ -49,13 +51,34 @@ def router_node(state: AgentState) -> dict:
             "needs_retrieval": False,
         }
 
-    llm = _get_llm()
+    llm = _get_llm(model=ROUTER_MODEL, max_tokens=512)
     structured_llm = llm.with_structured_output(RouteDecision)
+
     invoke_messages = [SystemMessage(content=ROUTER_SYSTEM)] + list(messages)
 
     try:
-        decision: RouteDecision = _safe_invoke_structured(structured_llm, invoke_messages)
-    except Exception:
+        decision = _safe_invoke_structured(structured_llm, invoke_messages)
+        if isinstance(decision, dict):
+            standalone = decision.get("standalone_query")
+            q_type = decision.get("query_type", "single_hop")
+            sub_q = decision.get("sub_queries", [])
+            retrieval = decision.get("needs_retrieval", True)
+        elif hasattr(decision, "standalone_query"):
+            standalone = decision.standalone_query
+            q_type = decision.query_type
+            sub_q = decision.sub_queries
+            retrieval = decision.needs_retrieval
+        else:
+            raise ValueError(f"Unexpected decision output format: {type(decision)}")
+
+        last_msg = messages[-1].content if messages else ""
+        return {
+            "current_query": standalone if standalone else last_msg,
+            "query_type": q_type,
+            "sub_queries": sub_q,
+            "needs_retrieval": retrieval,
+        }
+    except Exception as e:
         # Fallback: treat last user message as a direct single_hop query
         last_msg = messages[-1].content if messages else ""
         return {
@@ -64,10 +87,3 @@ def router_node(state: AgentState) -> dict:
             "sub_queries": [],
             "needs_retrieval": True,
         }
-
-    return {
-        "current_query": decision.standalone_query,
-        "query_type": decision.query_type,
-        "sub_queries": decision.sub_queries,
-        "needs_retrieval": decision.needs_retrieval,
-    }
