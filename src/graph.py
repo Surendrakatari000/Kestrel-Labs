@@ -1,13 +1,32 @@
 """
-LangGraph workflow that wires the 4 agents together.
+LangGraph Multi-Agent Orchestration Workflow
+============================================
+This module constructs and compiles the stateful graph connecting all four agents.
 
-Flow:
-  START → router
-           ├─ unsupported / no retrieval → END
-           └─ needs retrieval → retriever → synthesizer → verifier
-                                                            ├─ all supported → END
-                                                            └─ retry_count < 1 → retriever (loop)
-                                                               else → END (best effort)
+Architecture Flow:
+  START ──► Router
+              │
+              ├─► [needs_retrieval == False] ──► Unsupported Node (Fast-path ~1.5s) ──► END
+              │
+              └─► [needs_retrieval == True] ──► Retriever ──► Synthesizer ──► Verifier
+                                                                                │
+                                                                                ├─► [All claims supported] ──► END
+                                                                                │
+                                                                                └─► [Unsupported claims & retry < 1]
+                                                                                          │ (Loop back)
+                                                                                          ▼
+                                                                                   increment_retry ──► Retriever
+
+Key Interview Talking Points:
+1. State Machine vs Linear Chain:
+   - LangGraph treats the RAG pipeline as a directed cyclic graph with state.
+   - Allows dynamic branching (bypassing retrieval for greetings) and cyclic self-correction (retrying retrieval).
+2. Bounded Cyclic Self-Correction:
+   - If the Verifier discovers that a draft claim lacks support, it triggers a retry loop back to the Retriever.
+   - Retries are strictly capped at 1 (`retry_count < 1`) to prevent infinite looping and excessive token burn.
+3. Latency Optimization:
+   - Conversational greetings or thanks take the "fast path" directly to END (~1.5s latency).
+   - Conflicting questions skip vector re-queries because the conflict is resolved via date precedence in the Synthesizer.
 """
 
 from langgraph.graph import StateGraph, START, END
@@ -17,38 +36,47 @@ from src.agents import router_node, retriever_node, synthesizer_node, verifier_n
 
 
 # ─────────────────────────────────────────────
-# Conditional edge functions
+# 1. Conditional Edge Functions (Routing Logic)
 # ─────────────────────────────────────────────
 
 def after_router(state: AgentState) -> str:
-    """Decide where to go after the Router."""
+    """
+    Decides the next node after the Router agent.
+    - If needs_retrieval is False (e.g., greetings, general questions), routes to fast unsupported_node.
+    - If needs_retrieval is True, routes to the semantic Retriever agent.
+    """
     if not state.get("needs_retrieval", True):
         return "end_unsupported"
     return "retriever"
 
 
 def after_verifier(state: AgentState) -> str:
-    """Decide whether to accept, retry, or bail."""
+    """
+    Evaluates the Verifier's factual claim audit to determine whether to finalize or retry.
+    - If overall_supported is True: accepts answer and routes to END.
+    - If query is 'conflicting' or 'unsupported': accepts without retry (date precedence already resolved it).
+    - If claims failed verification and retry_count < 1: loops back to increment_retry -> retriever.
+    - Otherwise: accepts best-effort qualified answer to avoid infinite loops.
+    """
     if state.get("overall_supported", True):
         return "accept"
 
-    # For conflicting or unsupported queries, the synthesizer and verifier
-    # already compare dates and present the resolution/gap. Retrying ChromaDB
-    # returns the exact same chunks and wastes 20-30s.
+    # Conflicting or unsupported queries are already resolved via publication metadata
     query_type = state.get("query_type", "")
     if query_type in ("conflicting", "unsupported"):
         return "accept"
 
+    # Bounded retry: allow at most 1 re-retrieval
     retry_count = state.get("retry_count", 0)
     if retry_count < 1:
         return "retry"
 
-    # Max retries exhausted — accept best effort
+    # Retries exhausted — deliver qualified, honest answer
     return "accept"
 
 
 # ─────────────────────────────────────────────
-# Helper nodes
+# 2. Fast-Path / Helper Nodes
 # ─────────────────────────────────────────────
 
 GREETING_PATTERNS = {
@@ -64,18 +92,21 @@ IDENTITY_PATTERNS = {
 
 
 def unsupported_node(state: AgentState) -> dict:
-    """Generates a polite, natural response for greetings, conversational messages, or unsupported queries."""
+    """
+    Generates an immediate, polite response for conversational messages or out-of-domain queries
+    without performing expensive vector store lookups.
+    """
     query_type = state.get("query_type", "")
     query = (state.get("current_query", "") or "").strip().lower()
     clean_query = "".join(c for c in query if c.isalnum() or c.isspace()).strip()
 
-    # 1. Thank you
+    # Conversational: Thank you
     if clean_query in THANKS_PATTERNS or any(clean_query.startswith(t) for t in THANKS_PATTERNS):
         return {
             "final_answer": "You're very welcome! Feel free to ask if you have any other questions about Kestrel Labs."
         }
 
-    # 2. Identity / Capabilities
+    # Conversational: Identity / Capabilities
     if clean_query in IDENTITY_PATTERNS or any(clean_query.startswith(i) for i in IDENTITY_PATTERNS):
         return {
             "final_answer": (
@@ -85,7 +116,7 @@ def unsupported_node(state: AgentState) -> dict:
             )
         }
 
-    # 3. Greetings
+    # Conversational: Greetings
     if query_type == "greeting" or clean_query in GREETING_PATTERNS or any(clean_query.startswith(g + " ") for g in GREETING_PATTERNS):
         return {
             "final_answer": (
@@ -95,7 +126,7 @@ def unsupported_node(state: AgentState) -> dict:
             )
         }
 
-    # 4. Genuinely unsupported / out-of-domain queries
+    # Out-of-corpus / Unsupported queries
     return {
         "final_answer": (
             "I'm a research assistant for Kestrel Labs internal documentation. "
@@ -112,14 +143,17 @@ def increment_retry(state: AgentState) -> dict:
 
 
 # ─────────────────────────────────────────────
-# Build the graph
+# 3. Graph Assembly & Compilation
 # ─────────────────────────────────────────────
 
 def build_graph():
-    """Compiles the LangGraph with conditional routing and a retry loop."""
+    """
+    Assembles the LangGraph StateGraph, adds nodes, wires conditional edges,
+    and returns the compiled executable runnable.
+    """
     workflow = StateGraph(AgentState)
 
-    # Add nodes
+    # Register the agent nodes
     workflow.add_node("router", router_node)
     workflow.add_node("unsupported", unsupported_node)
     workflow.add_node("retriever", retriever_node)
@@ -127,10 +161,10 @@ def build_graph():
     workflow.add_node("verifier", verifier_node)
     workflow.add_node("increment_retry", increment_retry)
 
-    # START → Router
+    # Entry point: START -> Router
     workflow.add_edge(START, "router")
 
-    # Router → Retriever or Unsupported
+    # Conditional Branch: Router -> Retriever (if research needed) OR Unsupported (fast-path)
     workflow.add_conditional_edges(
         "router",
         after_router,
@@ -140,14 +174,14 @@ def build_graph():
         },
     )
 
-    # Unsupported → END
+    # Fast-path terminates at END
     workflow.add_edge("unsupported", END)
 
-    # Retriever → Synthesizer → Verifier
+    # Sequential Core Pipeline: Retriever -> Synthesizer -> Verifier
     workflow.add_edge("retriever", "synthesizer")
     workflow.add_edge("synthesizer", "verifier")
 
-    # Verifier → Accept (END) or Retry (loop back to retriever)
+    # Conditional Branch: Verifier -> Accept (END) OR Retry Loop (increment_retry -> retriever)
     workflow.add_conditional_edges(
         "verifier",
         after_verifier,
@@ -157,7 +191,7 @@ def build_graph():
         },
     )
 
-    # Retry increment → Retriever (loop)
+    # Connect retry back to Retriever
     workflow.add_edge("increment_retry", "retriever")
 
     return workflow.compile()

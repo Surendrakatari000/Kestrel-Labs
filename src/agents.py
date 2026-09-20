@@ -1,10 +1,29 @@
 """
-All four agents for the Kestrel Research Assistant.
+Core Agent Implementations for Kestrel Research Assistant
+========================================================
+This module contains the logic for all four specialized agents:
 
-Router    → classifies query, resolves pronouns, decomposes multi-hop
-Retriever → searches ChromaDB with dynamic k
-Synthesizer → drafts grounded answer with citations
-Verifier  → fact-checks claims, issues verdicts, revises if needed
+1. Router Agent:
+   - Analyzes conversational context to rewrite follow-up questions (pronoun resolution).
+   - Classifies query intent: single_hop, multi_hop, conflicting, unsupported, follow_up, greeting.
+   - Decomposes complex multi-hop queries into 2-3 focused sub-queries.
+
+2. Retriever Agent:
+   - Queries ChromaDB using dynamic k sizing based on query type.
+   - Executes sub-query retrieval for multi-hop questions with ID deduplication.
+
+3. Synthesizer Agent:
+   - Generates an evidence-grounded answer citing exact sources in format: [chunk_id: title].
+   - Enforces metadata precedence: when documents conflict, the newer 'published' date is trusted.
+
+4. Verifier (Critic) Agent:
+   - Fact-checks every material claim against retrieved chunks.
+   - Assigns structured verdicts: supported, partially_supported, conflicting_evidence, insufficient_evidence.
+   - Performs surgical in-place revisions to ensure factual honesty without extra generation latency.
+
+Rate Limiting & Free-Tier Resilience:
+   - All LLM invocations use `tenacity` with exponential backoff on HTTP 429 errors.
+   - Output tokens capped at 2048 to respect Groq free-tier quotas.
 """
 
 import os
@@ -20,11 +39,15 @@ from src.vectorstore import search_corpus
 
 
 # ─────────────────────────────────────────────
-# Helpers
+# Resilient LLM Helpers (HTTP 429 Backoff)
 # ─────────────────────────────────────────────
 
 def _get_llm(temperature: float = 0):
-    """Returns a Groq LLM with rate-limit-safe retry via tenacity."""
+    """
+    Returns an initialized ChatGroq client.
+    Default model is 'openai/gpt-oss-120b' or 'llama-3.3-70b-versatile'.
+    Output capped at 2048 tokens to stay within free-tier limits.
+    """
     model_name = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
     return ChatGroq(
         model=model_name,
@@ -34,7 +57,10 @@ def _get_llm(temperature: float = 0):
 
 
 def _log_retry(retry_state):
-    """Logs rate-limit backoff events when tenacity retries an LLM call."""
+    """
+    Callback fired before Tenacity sleeps between retries.
+    Informs developers in the console about rate limits and backoff duration.
+    """
     exc = retry_state.outcome.exception()
     sleep_time = retry_state.next_action.sleep
     attempt = retry_state.attempt_number
@@ -46,7 +72,10 @@ def _log_retry(retry_state):
 
 
 def _safe_invoke(llm, messages):
-    """Invoke LLM with exponential backoff on rate limit (HTTP 429)."""
+    """
+    Invokes the LLM with exponential backoff on transient errors (HTTP 429 / timeouts).
+    Wait progression: 4s -> 8s -> 16s -> 32s (bounded at 60s, max 4 attempts).
+    """
     @retry(
         stop=stop_after_attempt(4),
         wait=wait_exponential(multiplier=2, min=4, max=60),
@@ -60,7 +89,10 @@ def _safe_invoke(llm, messages):
 
 
 def _safe_invoke_structured(structured_llm, messages):
-    """Invoke structured-output LLM with exponential backoff."""
+    """
+    Invokes a Pydantic-structured LLM with exponential backoff on rate limits.
+    Ensures structured schema guarantees even during high API load.
+    """
     @retry(
         stop=stop_after_attempt(4),
         wait=wait_exponential(multiplier=2, min=4, max=60),
@@ -78,13 +110,19 @@ def _safe_invoke_structured(structured_llm, messages):
 # ─────────────────────────────────────────────
 
 class RouteDecision(BaseModel):
-    """Structured output from the Router agent."""
+    """
+    Pydantic schema enforcing structured routing decisions:
+    - standalone_query: Pronoun-resolved question suitable for semantic vector search.
+    - query_type: Categorization used by downstream nodes for dynamic retrieval strategy.
+    - sub_queries: List of simpler queries if question requires multi-hop decomposition.
+    - needs_retrieval: Whether vector search should be triggered.
+    """
     standalone_query: str = Field(
         description="The user's question rewritten as a fully self-contained query. "
                     "Resolve all pronouns (e.g. 'them', 'it', 'that') using conversation history."
     )
     query_type: Literal["single_hop", "multi_hop", "conflicting", "unsupported", "follow_up", "greeting"] = Field(
-        description="The category of the query. "
+        description="The category of the query: "
                     "greeting: conversational greetings ('hi', 'hello', 'hey') or polite remarks ('thanks'). "
                     "single_hop: direct factual lookup. "
                     "multi_hop: needs info from multiple documents. "
@@ -129,7 +167,11 @@ Your job:
 
 
 def router_node(state: AgentState) -> dict:
-    """Classifies the query, resolves pronouns, decomposes multi-hop."""
+    """
+    Router Node:
+    Takes conversation history, performs conversational pronoun resolution,
+    categorizes intent, and decomposes multi-hop queries.
+    """
     messages = state.get("messages", [])
     if not messages:
         return {
@@ -141,13 +183,12 @@ def router_node(state: AgentState) -> dict:
 
     llm = _get_llm()
     structured_llm = llm.with_structured_output(RouteDecision)
-
     invoke_messages = [SystemMessage(content=ROUTER_SYSTEM)] + list(messages)
 
     try:
         decision: RouteDecision = _safe_invoke_structured(structured_llm, invoke_messages)
     except Exception:
-        # Fallback: treat as single_hop with the raw user text
+        # Graceful fallback: treat as single_hop with raw user query
         last_msg = messages[-1].content if messages else ""
         return {
             "current_query": last_msg,
@@ -169,7 +210,13 @@ def router_node(state: AgentState) -> dict:
 # ─────────────────────────────────────────────
 
 def retriever_node(state: AgentState) -> dict:
-    """Searches ChromaDB with dynamic k based on query_type."""
+    """
+    Retriever Node:
+    Executes semantic search over local ChromaDB using dynamic k heuristics:
+    - multi_hop: Runs search across all decomposed sub-queries, deduplicates, and caps at 8 chunks.
+    - conflicting: Retrieves top-5 chunks to capture older specs and newer release notes.
+    - single_hop / follow_up: Retrieves top-3 most focused chunks.
+    """
     query = state.get("current_query", "")
     query_type = state.get("query_type", "single_hop")
     sub_queries = state.get("sub_queries", [])
@@ -178,7 +225,7 @@ def retriever_node(state: AgentState) -> dict:
         return {"retrieved_chunks": []}
 
     if query_type == "multi_hop" and sub_queries:
-        # Run each sub-query separately and deduplicate
+        # Multi-hop: search each sub-query independently and deduplicate by chunk_id
         seen_ids = set()
         all_chunks = []
         for sq in sub_queries:
@@ -188,17 +235,22 @@ def retriever_node(state: AgentState) -> dict:
                 if cid not in seen_ids:
                     seen_ids.add(cid)
                     all_chunks.append(h)
-        # Also search the main query for good measure
+
+        # Also search the main query to ensure broad context
         for h in search_corpus(query, k=3):
             cid = h["metadata"].get("chunk_id", "")
             if cid not in seen_ids:
                 seen_ids.add(cid)
                 all_chunks.append(h)
-        return {"retrieved_chunks": all_chunks[:8]}  # Cap at 8
+
+        return {"retrieved_chunks": all_chunks[:8]}  # Cap at top 8 to stay within context budget
+
     elif query_type == "conflicting":
+        # Conflicting queries need wider context to find both older and newer documentation
         return {"retrieved_chunks": search_corpus(query, k=5)}
+
     else:
-        # single_hop, follow_up, or default
+        # Direct lookup (single_hop or follow_up)
         return {"retrieved_chunks": search_corpus(query, k=3)}
 
 
@@ -206,8 +258,8 @@ def retriever_node(state: AgentState) -> dict:
 # 3. SYNTHESIZER AGENT
 # ─────────────────────────────────────────────
 
-def _format_chunks_for_prompt(chunks) -> str:
-    """Formats retrieved chunks into a context string for the LLM."""
+def _format_chunks_for_prompt(chunks: List[dict]) -> str:
+    """Formats retrieved chunks with metadata headers so the LLM can inspect publication dates."""
     if not chunks:
         return "(No context retrieved.)"
     parts = []
@@ -240,7 +292,11 @@ RULES:
 
 
 def synthesizer_node(state: AgentState) -> dict:
-    """Drafts a grounded answer with citations from retrieved chunks."""
+    """
+    Synthesizer Node:
+    Drafts an answer grounded exclusively in the retrieved chunks.
+    Enforces publication date precedence and strict source citations.
+    """
     query = state.get("current_query", "")
     chunks = state.get("retrieved_chunks", [])
 
@@ -272,6 +328,7 @@ def synthesizer_node(state: AgentState) -> dict:
 # ─────────────────────────────────────────────
 
 class ClaimVerdict(BaseModel):
+    """Structured audit verdict for a single factual claim."""
     claim: str = Field(description="A factual claim extracted from the draft answer.")
     verdict: Literal[
         "supported", "partially_supported", "conflicting_evidence", "insufficient_evidence"
@@ -282,6 +339,7 @@ class ClaimVerdict(BaseModel):
 
 
 class VerifierOutput(BaseModel):
+    """Structured output from the Verifier containing claim-by-claim audits and surgical revision."""
     claims: List[ClaimVerdict] = Field(
         description="Verdicts for every material claim in the draft."
     )
@@ -313,11 +371,15 @@ INSTRUCTIONS:
 
 
 def verifier_node(state: AgentState) -> dict:
-    """Fact-checks the draft answer against retrieved chunks."""
+    """
+    Verifier Node:
+    Acts as an adversarial fact-checker. Evaluates every claim in the draft against evidence chunks.
+    Directly produces a surgically revised answer if unsupported claims are found, avoiding latency overhead.
+    """
     draft = state.get("draft_answer", "")
     chunks = state.get("retrieved_chunks", [])
 
-    # If no draft or it's already an "insufficient" answer, pass through
+    # If already a refusal on missing docs, pass through immediately
     if not draft or "does not contain information" in draft.lower():
         return {
             "verifier_verdicts": [],
@@ -348,7 +410,7 @@ def verifier_node(state: AgentState) -> dict:
             "final_answer": result.revised_answer,
         }
     except Exception as e:
-        # If structured output fails, accept the draft as-is
+        # Fallback: if structured parser fails, accept draft safely
         return {
             "verifier_verdicts": [{"claim": "parse_error", "verdict": "supported", "explanation": str(e)}],
             "overall_supported": True,
