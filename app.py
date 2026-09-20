@@ -11,7 +11,7 @@ from langchain_core.messages import HumanMessage, AIMessage
 st.set_page_config(
     page_title="Kestrel Labs Research Assistant",
     page_icon="🐦",
-    layout="wide",
+    layout="centered",
 )
 
 # Load environment
@@ -31,52 +31,19 @@ chunk_count = _warmup_resources()
 
 
 # ─────────────────────────────────────────────
-# 2. Sidebar: System Information & Status
+# 2. Main Header & Clear Conversation Button
 # ─────────────────────────────────────────────
-with st.sidebar:
-    st.image("https://img.icons8.com/clouds/200/falcon.png", width=90)
-    st.markdown("### 🐦 Kestrel Research Assistant")
-    st.caption("Multi-Agent RAG over Kestrel Labs internal wiki")
+header_col1, header_col2 = st.columns([0.78, 0.22], vertical_alignment="bottom")
+with header_col1:
+    st.title("🐦 Kestrel Labs Research Assistant")
+    st.caption(
+        f"Grounded Multi-Agent RAG over Kestrel Labs internal documentation • {chunk_count} chunks indexed across 25 docs"
+    )
 
-    st.divider()
-
-    st.markdown("#### 🤖 Agent Architecture")
-    st.markdown("""
-    - 🔀 **Router Agent**  
-      *Query classification & pronoun resolution*
-    - 🔍 **Retriever Agent**  
-      *Dynamic semantic search over ChromaDB*
-    - ✍️ **Synthesizer Agent**  
-      *Grounded drafting with `[chunk_id]` citations*
-    - 🛡️ **Verifier Agent**  
-      *Claim fact-checking & audit validation*
-    """)
-
-    st.divider()
-
-    st.markdown("#### 📚 Knowledge Base Stats")
-    st.markdown(f"""
-    - **Total Chunks:** `{chunk_count}`
-    - **Documents:** `25 internal docs`
-    - **Embeddings:** `{EMBEDDING_MODEL_NAME}` (local)
-    - **Orchestration:** `LangGraph`
-    - **LLM Provider:** `Groq (Free Tier)`
-    """)
-
-    st.divider()
-
+with header_col2:
     if st.button("🧹 Clear Conversation", use_container_width=True):
         st.session_state.messages = []
         st.rerun()
-
-
-# ─────────────────────────────────────────────
-# 3. Main Header & Session State
-# ─────────────────────────────────────────────
-st.title("🐦 Kestrel Labs Research Assistant")
-st.caption(
-    "Ask anything about Kestrel's product specs, engineering runbooks, pricing tiers, release notes, or company policies."
-)
 
 if "graph" not in st.session_state:
     st.session_state.graph = build_graph()
