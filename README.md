@@ -93,21 +93,33 @@ All runs from both the evaluation suite and the Streamlit UI are traced to LangS
 ├── corpus.jsonl          # Read-only knowledge base (154 chunks)
 ├── .env.example          # Environment template
 ├── requirements.txt      # Python dependencies
-├── README.md             # This file
+├── README.md             # Project documentation & run instructions
 ├── DESIGN.md             # Architecture diagram, agent roles & handoffs
 ├── REFLECTION.md         # Engineering reflection, trade-offs & latency
-├── app.py                # Streamlit frontend
-├── run_evals.py          # Evaluation runner
+├── app.py                # Streamlit interactive frontend
+├── run_evals.py          # Evaluation runner & LangSmith dataset logger
 ├── src/
 │   ├── __init__.py
-│   ├── state.py          # LangGraph AgentState
+│   ├── state.py          # LangGraph AgentState schema
 │   ├── vectorstore.py    # ChromaDB + local embeddings
-│   ├── agents.py         # Router, Retriever, Synthesizer, Verifier
-│   └── graph.py          # LangGraph workflow + retry loop
+│   ├── graph.py          # LangGraph workflow + conditional retry loop
+│   ├── agents/           # Modular agent implementations
+│   │   ├── __init__.py
+│   │   ├── router.py     # Pronoun resolution, query routing & classification
+│   │   ├── retriever.py  # Dynamic-k vector retrieval
+│   │   ├── synthesizer.py# Grounded drafting with date precedence
+│   │   ├── verifier.py   # Claim-by-claim audit & surgical revision
+│   │   └── utils.py      # LLM initialization & safe invocation
+│   └── utils/
+│       ├── __init__.py
+│       └── citations.py  # Citation normalization ([chunk_id: title]) & extraction
 ├── results/
-│   ├── eval_questions.jsonl
-│   ├── eval_results.jsonl
-│   ├── metrics_summary.json
-│   └── improvement.md
-└── chroma_db/            # Auto-generated vector store
+│   ├── eval_questions.jsonl  # 15-question evaluation suite
+│   ├── eval_results.jsonl    # Per-question outputs & metrics
+│   ├── metrics_summary.json  # Aggregate metrics & type breakdown
+│   └── improvement.md        # Before/after improvement report
+├── tests/
+│   └── test_citations.py     # Unit test suite for citation handling
+└── chroma_db/                # Auto-generated local vector store
 ```
+

@@ -12,6 +12,31 @@ st.set_page_config(
     page_title="Kestrel Labs Research Assistant",
     page_icon="🐦",
     layout="centered",
+    initial_sidebar_state="collapsed",
+    menu_items={
+        "Get Help": None,
+        "Report a bug": None,
+        "About": None,
+    },
+)
+
+# Hide Streamlit default UI chrome (deploy button, hamburger menu, header, footer)
+st.markdown(
+    """
+    <style>
+    #MainMenu {visibility: hidden !important; display: none !important;}
+    header {visibility: hidden !important; height: 0px !important;}
+    [data-testid="stHeader"] {visibility: hidden !important; height: 0px !important;}
+    [data-testid="stToolbar"] {visibility: hidden !important; display: none !important;}
+    .stDeployButton {visibility: hidden !important; display: none !important;}
+    footer {visibility: hidden !important; display: none !important;}
+    [data-testid="stDecoration"] {display: none !important;}
+    [data-testid="stStatusWidget"] {visibility: hidden !important; display: none !important;}
+    #manage-app-button {display: none !important;}
+    ul[data-testid="main-menu-list"] {display: none !important;}
+    </style>
+    """,
+    unsafe_allow_html=True,
 )
 
 # Load environment
@@ -20,6 +45,7 @@ load_dotenv()
 import time
 from src.graph import build_graph
 from src.vectorstore import get_collection, get_embedding_function, EMBEDDING_MODEL_NAME
+from src.utils.citations import extract_cited_sources
 
 # ─────────────────────────────────────────────
 # 2. Knowledge Base & Model Warmup with Progress Bar
@@ -131,11 +157,26 @@ if not st.session_state.messages:
 # ─────────────────────────────────────────────
 # 5. Render Conversation & Active Turn
 # ─────────────────────────────────────────────
+def render_assistant_content(content: str):
+    """Renders the assistant response and visibly displays its citations (chunk_id and title)."""
+    st.markdown(content)
+    sources = extract_cited_sources(content)
+    if sources:
+        with st.expander(f"📚 Citations & Evidence ({len(sources)} sources)", expanded=False):
+            for s in sources:
+                cat = f" • *{s['category'].title()}*" if s.get('category') else ""
+                ver = f" (v{s['version']})" if s.get('version') else ""
+                st.markdown(f"- **`{s['chunk_id']}`**: {s['title']}{ver}{cat}")
+
+
 # Render all conversation history up to the latest turn
 for msg in st.session_state.messages[:-1] if (st.session_state.messages and isinstance(st.session_state.messages[-1], HumanMessage)) else st.session_state.messages:
     role = "user" if isinstance(msg, HumanMessage) else "assistant"
     with st.chat_message(role):
-        st.markdown(msg.content)
+        if role == "assistant":
+            render_assistant_content(msg.content)
+        else:
+            st.markdown(msg.content)
 
 # If the latest message is a user message needing an answer, run the assistant!
 if st.session_state.messages and isinstance(st.session_state.messages[-1], HumanMessage):
@@ -177,8 +218,9 @@ if st.session_state.messages and isinstance(st.session_state.messages[-1], Human
             status_area.empty()
 
             if final_answer:
-                st.markdown(final_answer)
+                render_assistant_content(final_answer)
                 st.session_state.messages.append(AIMessage(content=final_answer))
+
 
         except Exception as e:
             status_area.empty()

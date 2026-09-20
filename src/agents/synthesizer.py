@@ -31,6 +31,8 @@ Draft an answer based STRICTLY on the provided context chunks.
 RULES:
 1. Ground every statement in context; never invent facts.
 2. Cite sources using exact format: [chunk_id: title]
+   Example: "All Beacons are evaluated every 5 minutes [spec-beacons:1: Beacons: Alerting Specification]."
+   Always include BOTH the chunk_id and title inside the square brackets.
 3. If sources disagree, compare 'published' dates. Trust the newer document and mention both.
 4. If context does not answer the query, reply:
    "The available documentation does not contain information to answer this question."
@@ -40,6 +42,8 @@ RULES:
 
 def synthesizer_node(state: AgentState) -> dict:
     """Drafts an evidence-backed answer citing chunks and resolving conflicts by date."""
+    from src.utils.citations import normalize_citations
+
     query = state.get("current_query", "")
     chunks = state.get("retrieved_chunks", [])
 
@@ -61,6 +65,8 @@ def synthesizer_node(state: AgentState) -> dict:
 
     try:
         response = _safe_invoke(llm, msgs)
-        return {"draft_answer": response.content}
+        normalized_draft = normalize_citations(response.content, chunks)
+        return {"draft_answer": normalized_draft}
     except Exception as e:
         return {"draft_answer": f"Error generating answer: {e}"}
+

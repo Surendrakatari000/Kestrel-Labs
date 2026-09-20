@@ -35,13 +35,15 @@ INSTRUCTIONS:
 2. Check each claim against Context: supported, partially_supported, conflicting_evidence, or insufficient_evidence.
 3. Set overall_supported=True only if all claims are supported.
 4. Write revised_answer:
-   - If all supported: copy draft answer exactly.
-   - If any claim is not supported: rewrite to be honest about evidence gaps while keeping citations.
+   - If all supported: copy draft answer exactly, preserving all [chunk_id: title] citations.
+   - If any claim is not supported: rewrite to be honest about evidence gaps while strictly preserving [chunk_id: title] citations.
 """
 
 
 def verifier_node(state: AgentState) -> dict:
     """Audits claims against retrieved chunks and produces an in-place revision."""
+    from src.utils.citations import normalize_citations
+
     draft = state.get("draft_answer", "")
     chunks = state.get("retrieved_chunks", [])
 
@@ -68,15 +70,17 @@ def verifier_node(state: AgentState) -> dict:
             {"claim": c.claim, "verdict": c.verdict, "explanation": c.explanation}
             for c in result.claims
         ]
+        normalized_answer = normalize_citations(result.revised_answer, chunks)
         return {
             "verifier_verdicts": verdicts,
             "overall_supported": result.overall_supported,
-            "final_answer": result.revised_answer,
+            "final_answer": normalized_answer,
         }
     except Exception as e:
-        # Fallback: if parsing fails, preserve draft safely
+        # Fallback: if parsing fails, preserve draft safely with normalized citations
         return {
             "verifier_verdicts": [{"claim": "parse_error", "verdict": "supported", "explanation": str(e)}],
             "overall_supported": True,
-            "final_answer": draft,
+            "final_answer": normalize_citations(draft, chunks),
         }
+

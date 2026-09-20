@@ -9,8 +9,9 @@ During the initial evaluation run, follow-up questions like *"What about on the 
 - The synthesizer produced an answer about Growth pricing rather than Growth Beacon limits
 
 ## What was changed
-I implemented a `RouteDecision` structured output in the Router agent (`src/agents.py`). The Router receives the full `messages` history and uses the LLM to:
+I implemented a `RouteDecision` structured output in the Router agent (`src/agents/router.py`). The Router receives the full `messages` history and uses the LLM to:
 1. **Resolve pronouns** — e.g. rewriting *"What about on the Growth plan?"* into *"How many Beacons can a Growth project have?"*
+
 2. **Classify the query type** — marking it as `follow_up` so the system knows it's part of a conversation
 3. **Set needs_retrieval** — ensuring the rewritten standalone query goes to the retriever
 
