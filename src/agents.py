@@ -69,8 +69,9 @@ class RouteDecision(BaseModel):
         description="The user's question rewritten as a fully self-contained query. "
                     "Resolve all pronouns (e.g. 'them', 'it', 'that') using conversation history."
     )
-    query_type: Literal["single_hop", "multi_hop", "conflicting", "unsupported", "follow_up"] = Field(
+    query_type: Literal["single_hop", "multi_hop", "conflicting", "unsupported", "follow_up", "greeting"] = Field(
         description="The category of the query. "
+                    "greeting: conversational greetings ('hi', 'hello', 'hey') or polite remarks ('thanks'). "
                     "single_hop: direct factual lookup. "
                     "multi_hop: needs info from multiple documents. "
                     "conflicting: asks about something where sources may disagree. "
@@ -100,7 +101,13 @@ Kestrel Labs is a product-analytics SaaS company. The knowledge base covers:
 
 Your job:
 1. Rewrite the user's latest message into a standalone_query by resolving pronouns from chat history.
-2. Classify the query_type.
+2. Classify the query_type:
+   - "greeting" for hello/hi/hey/thanks/who are you.
+   - "single_hop" for direct factual questions answered by 1 doc.
+   - "multi_hop" for questions requiring combining information across multiple docs.
+   - "conflicting" for questions where different documents or versions disagree.
+   - "unsupported" for questions clearly not covered by Kestrel documentation.
+   - "follow_up" for continuous conversational questions following up on previous topics.
 3. If multi_hop, break it into sub_queries.
 4. Set needs_retrieval=False ONLY for greetings or questions clearly outside Kestrel's domain (e.g. "What's the weather?").
    For questions that MIGHT be in the corpus but you're unsure, set needs_retrieval=True so the retriever can check.

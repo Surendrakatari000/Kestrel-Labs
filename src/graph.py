@@ -44,25 +44,57 @@ def after_verifier(state: AgentState) -> str:
 # Helper nodes
 # ─────────────────────────────────────────────
 
-def unsupported_node(state: AgentState) -> dict:
-    """Generates a polite response for unsupported/conversational queries."""
-    query_type = state.get("query_type", "")
-    query = state.get("current_query", "")
+GREETING_PATTERNS = {
+    "hi", "hello", "hey", "greetings", "good morning", "good afternoon",
+    "good evening", "howdy", "sup", "what's up", "hiya", "yo"
+}
+THANKS_PATTERNS = {
+    "thanks", "thank you", "thx", "appreciate it", "thank you very much"
+}
+IDENTITY_PATTERNS = {
+    "who are you", "what are you", "what can you do", "help"
+}
 
-    if query_type == "unsupported":
+
+def unsupported_node(state: AgentState) -> dict:
+    """Generates a polite, natural response for greetings, conversational messages, or unsupported queries."""
+    query_type = state.get("query_type", "")
+    query = (state.get("current_query", "") or "").strip().lower()
+    clean_query = "".join(c for c in query if c.isalnum() or c.isspace()).strip()
+
+    # 1. Thank you
+    if clean_query in THANKS_PATTERNS or any(clean_query.startswith(t) for t in THANKS_PATTERNS):
+        return {
+            "final_answer": "You're very welcome! Feel free to ask if you have any other questions about Kestrel Labs."
+        }
+
+    # 2. Identity / Capabilities
+    if clean_query in IDENTITY_PATTERNS or any(clean_query.startswith(i) for i in IDENTITY_PATTERNS):
         return {
             "final_answer": (
-                "I'm a research assistant for Kestrel Labs internal documentation. "
-                "The available documents don't contain information about that topic. "
-                "I can help with questions about Kestrel's product specs, pricing, "
-                "engineering architecture, incident reports, and company policies."
+                "I am a research assistant dedicated to Kestrel Labs internal documentation. "
+                "I retrieve evidence from company docs, cite exact sources, and verify claims. "
+                "Ask me anything about our product features, engineering runbooks, release notes, or policies!"
             )
         }
-    # Generic conversational (greetings, thanks)
+
+    # 3. Greetings
+    if query_type == "greeting" or clean_query in GREETING_PATTERNS or any(clean_query.startswith(g + " ") for g in GREETING_PATTERNS):
+        return {
+            "final_answer": (
+                "Hello! I'm the Kestrel Labs research assistant. How can I help you today? "
+                "You can ask me anything about Kestrel's product specifications (Beacons, Funnels, Trails, Warehouse Sync), "
+                "pricing plans, engineering architecture, incident post-mortems, or company policies."
+            )
+        }
+
+    # 4. Genuinely unsupported / out-of-domain queries
     return {
         "final_answer": (
-            "Hello! I'm the Kestrel Labs research assistant. "
-            "Ask me anything about Kestrel's products, pricing, engineering, or policies."
+            "I'm a research assistant for Kestrel Labs internal documentation. "
+            "The available documents don't contain information about that topic. "
+            "I can help with questions about Kestrel's product specs, pricing, "
+            "engineering architecture, incident reports, and company policies."
         )
     }
 
