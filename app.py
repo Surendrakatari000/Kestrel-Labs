@@ -12,7 +12,7 @@ st.set_page_config(
     page_title="Kestrel Labs Research Assistant",
     page_icon="🐦",
     layout="centered",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded",
     menu_items={
         "Get Help": None,
         "Report a bug": None,
@@ -20,13 +20,11 @@ st.set_page_config(
     },
 )
 
-# Hide Streamlit default UI chrome (deploy button, hamburger menu, header, footer)
+# Hide Streamlit default UI chrome (deploy button, hamburger menu, footer)
 st.markdown(
     """
     <style>
     #MainMenu {visibility: hidden !important; display: none !important;}
-    header {visibility: hidden !important; height: 0px !important;}
-    [data-testid="stHeader"] {visibility: hidden !important; height: 0px !important;}
     [data-testid="stToolbar"] {visibility: hidden !important; display: none !important;}
     .stDeployButton {visibility: hidden !important; display: none !important;}
     footer {visibility: hidden !important; display: none !important;}
@@ -34,6 +32,7 @@ st.markdown(
     [data-testid="stStatusWidget"] {visibility: hidden !important; display: none !important;}
     #manage-app-button {display: none !important;}
     ul[data-testid="main-menu-list"] {display: none !important;}
+    [data-testid="collapsedControl"] {visibility: visible !important; display: block !important;}
     </style>
     """,
     unsafe_allow_html=True,
@@ -84,19 +83,68 @@ else:
 
 
 # ─────────────────────────────────────────────
-# 2. Main Header & Clear Conversation Button
+# 2. Sidebar: Session Management & Model Switch
 # ─────────────────────────────────────────────
-header_col1, header_col2 = st.columns([0.72, 0.28], vertical_alignment="bottom")
-with header_col1:
-    st.title("🐦 Kestrel Labs Research Assistant")
-    st.caption(
-        f"Your AI assistant for Kestrel Labs • **{chunk_count} docs indexed** • **4 active agents**"
-    )
-
-with header_col2:
-    if st.button("🧹 Clear Chat", use_container_width=True):
+with st.sidebar:
+    st.markdown("### 🐦 Kestrel Assistant")
+    
+    # Session Control: Clear Chat
+    if st.button("🧹 Clear Chat", use_container_width=True, type="primary"):
         st.session_state.messages = []
         st.rerun()
+
+    st.divider()
+
+    # Model Switch (Generation only)
+    st.markdown("#### ✍️ Generation Model")
+    
+    model_options = [
+        "qwen/qwen3.8-27b",
+        "openai/gpt-oss-20b",
+        "llama-3.3-70b-versatile",
+        "llama-3.1-8b-instant",
+    ]
+    
+    model_labels = {
+        "qwen/qwen3.8-27b": "Qwen 3.8 27B (Primary)",
+        "openai/gpt-oss-20b": "GPT-OSS 20B (Fallback)",
+        "llama-3.3-70b-versatile": "Llama 3.3 70B (Versatile)",
+        "llama-3.1-8b-instant": "Llama 3.1 8B (Fast)",
+    }
+
+    current_env_model = os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b")
+    default_idx = model_options.index(current_env_model) if current_env_model in model_options else 0
+
+    selected_model = st.selectbox(
+        "Active Generation Model",
+        options=model_options,
+        index=default_idx,
+        format_func=lambda m: model_labels.get(m, m),
+        help="Select the model used for response synthesis and drafting answers. Router model remains dedicated and fixed.",
+    )
+
+    if selected_model != os.environ.get("GROQ_MODEL"):
+        os.environ["GROQ_MODEL"] = selected_model
+        st.toast(f"Switched generation model to {model_labels.get(selected_model, selected_model)}", icon="🔄")
+
+    st.divider()
+
+    # System Diagnostics
+    st.markdown("#### 📊 System Details")
+    st.caption("🧠 **Router Agent:** `Qwen 3.8 27B` *(Fixed)*")
+    st.caption(f"✍️ **Synthesizer Agent:** `{model_labels.get(selected_model, selected_model)}`")
+    st.caption("🛡️ **Verifier Agent:** `Qwen 3.8 27B` *(Fixed)*")
+    st.caption(f"📚 **Indexed Chunks:** `{chunk_count}`")
+    st.caption("⚡ **Inference Engine:** Groq LPU")
+
+
+# ─────────────────────────────────────────────
+# 3. Main Header
+# ─────────────────────────────────────────────
+st.title("🐦 Kestrel Labs Research Assistant")
+st.caption(
+    f"Your AI assistant for Kestrel Labs • **{chunk_count} docs indexed** • **4 active agents** • Generation: `{model_labels.get(selected_model, selected_model)}`"
+)
 
 if "graph" not in st.session_state:
     st.session_state.graph = build_graph()
@@ -225,8 +273,16 @@ if st.session_state.messages and isinstance(st.session_state.messages[-1], Human
                         if node_name == "router":
                             qtype = node_state.get("query_type", "single_hop")
                             q = node_state.get("current_query", "")
-                            step_text = f"🧠 **Router Agent:** Classified as `{qtype}`" + (f" → *\"{q}\"*" if q else "")
-                            st.write(step_text)
+                            sub_queries = node_state.get("sub_queries", [])
+
+                            conflict_tag = " *(flagged for cross-document date resolution)*" if qtype == "conflicting" else ""
+                            step_text = f"🧠 **Router Agent:** Classified as `{qtype}`{conflict_tag}" + (f" → *\"{q}\"*" if q else "")
+
+                            if qtype == "multi_hop" and sub_queries:
+                                sub_lines = "\n".join(f"  • *{sq}*" for sq in sub_queries)
+                                step_text += f"\n\n  ↳ 🔀 **Decomposed into {len(sub_queries)} sub-queries:**\n{sub_lines}"
+
+                            st.markdown(step_text)
                             recorded_steps.append(step_text)
 
                         elif node_name == "retriever":
@@ -244,10 +300,25 @@ if st.session_state.messages and isinstance(st.session_state.messages[-1], Human
                             final_answer = node_state.get("final_answer", "")
                             verdicts = node_state.get("verifier_verdicts", [])
                             all_sup = node_state.get("overall_supported", True)
-                            icon = "✅" if all_sup else "⚠️"
-                            note = "All claims verified against evidence" if all_sup else "Audited claims & qualified unbacked statements"
+
+                            has_conflict = any(v.get("verdict") == "conflicting_evidence" for v in verdicts)
+                            has_insufficient = any(v.get("verdict") == "insufficient_evidence" for v in verdicts)
+
+                            if has_conflict:
+                                icon = "⚔️"
+                                note = "Conflicting evidence detected across documents (resolved by newer publication date)"
+                            elif has_insufficient:
+                                icon = "⚠️"
+                                note = "Identified insufficient evidence in corpus"
+                            elif all_sup:
+                                icon = "✅"
+                                note = "All claims verified against evidence"
+                            else:
+                                icon = "⚠️"
+                                note = "Audited claims & qualified unbacked statements"
+
                             step_text = f"🛡️ **Verifier Agent:** Audited {len(verdicts)} factual claims ({icon} {note})"
-                            st.write(step_text)
+                            st.markdown(step_text)
                             recorded_steps.append(step_text)
 
                         elif node_name == "unsupported":

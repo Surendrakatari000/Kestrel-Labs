@@ -1,5 +1,4 @@
-"""Verifier (Critic) Agent: fact-checks claims and surgically revises."""
-
+import os
 from typing import List, Literal
 from pydantic import BaseModel, Field
 from langchain_core.messages import SystemMessage, HumanMessage
@@ -7,6 +6,9 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from src.state import AgentState
 from src.agents.utils import _get_llm, _safe_invoke_structured
 from src.agents.synthesizer import _format_chunks_for_prompt
+
+VERIFIER_MODEL = os.getenv("GROQ_VERIFIER_MODEL", "qwen/qwen3.8-27b")
+
 
 
 class ClaimVerdict(BaseModel):
@@ -56,7 +58,7 @@ def verifier_node(state: AgentState) -> dict:
         }
 
     context = _format_chunks_for_prompt(chunks)
-    llm = _get_llm()
+    llm = _get_llm(model=VERIFIER_MODEL)
     structured_llm = llm.with_structured_output(VerifierOutput)
 
     msgs = [

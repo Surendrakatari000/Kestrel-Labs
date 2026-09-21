@@ -6,7 +6,7 @@ from langchain_core.messages import SystemMessage
 from src.state import AgentState
 from src.agents.utils import _get_llm, _safe_invoke_structured
 
-ROUTER_MODEL = os.getenv("GROQ_ROUTER_MODEL", os.getenv("GROQ_MODEL", "openai/gpt-oss-20b"))
+ROUTER_MODEL = os.getenv("GROQ_ROUTER_MODEL", "qwen/qwen3.8-27b")
 
 
 
@@ -33,9 +33,15 @@ ROUTER_SYSTEM = """You are the Router agent for Kestrel Labs internal research a
 The knowledge base covers product specs, release notes, pricing, engineering docs, post-mortems, and policies.
 
 Your job:
-1. Rewrite user's query into standalone_query by resolving pronouns from conversation history.
-2. Classify query_type into: greeting, single_hop, multi_hop, conflicting, unsupported, or follow_up.
-3. If multi_hop, decompose into 2-3 sub_queries.
+1. Rewrite user's query into standalone_query by resolving pronouns or missing context from conversation history.
+2. Classify query_type into:
+   - "greeting": general chitchat or hello (needs_retrieval=False).
+   - "unsupported": questions unrelated to Kestrel or explicitly outside the corpus (needs_retrieval=False).
+   - "multi_hop": questions asking for multiple distinct facts, root causes AND release fixes, or cross-document comparisons (e.g., plans vs releases). For multi_hop, you MUST provide 2-3 focused sub_queries.
+   - "conflicting": questions touching policies, retention windows, timeouts, or stipends that may have changed across versions or documents.
+   - "follow_up": questions that depend on previous chat turns.
+   - "single_hop": standard direct factual questions.
+3. If multi_hop, decompose into 2-3 specific sub_queries that search for the separate facts.
 4. Set needs_retrieval=False ONLY for greetings or clearly unsupported questions.
 """
 
